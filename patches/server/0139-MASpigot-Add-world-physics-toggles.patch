@@ -1,0 +1,128 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 16:53:02 -0400
+Subject: [PATCH] MASpigot Add world physics toggles
+
+Adds dropFloatingPlants (skip the vanilla break-if-unsupported check for BlockPlant-derived crops/plants/saplings), infiniteWaterSources (allow disabling new infinite water source formation), and enderPearlBlockCollides (allow thrown ender pearls to pass through open fence gates, double plants, and reeds instead of colliding with them).
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index c63cd15c13b503d91ef0245ffe0de7f85dd6f540..e6bc80d7ee3b7a4190bbc6ae929499dec8550791 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -130,4 +130,23 @@ public class PandaSpigotConfig {
+ 
+     @Comment("Protect spawn from explosions")
+     public boolean betterSpawnProtection = true;
++
++    // MASpigot start - world physics toggles
++    @Comment("When enabled (vanilla behaviour), crops/plants/saplings that lose their\n" +
++        "supporting block break and drop as items. When disabled, they are\n" +
++        "allowed to remain floating in place instead.\n" +
++        "Default: true")
++    public boolean dropFloatingPlants = true;
++
++    @Comment("When enabled (vanilla behaviour), flowing water can form new infinite\n" +
++        "water sources. When disabled, water never creates new sources.\n" +
++        "Default: true")
++    public boolean infiniteWaterSources = true;
++
++    @Comment("When enabled (vanilla behaviour), thrown ender pearls collide with\n" +
++        "open fence gates, double plants, and reeds. When disabled, ender\n" +
++        "pearls pass through those blocks instead of colliding with them.\n" +
++        "Default: true")
++    public boolean enderPearlBlockCollides = true;
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/BlockFlowing.java b/src/main/java/net/minecraft/server/BlockFlowing.java
+index 23130ba963a7fb0024cee47a2a44006e08d06353..bb9da5e3677470bf382606ff542572abc69c2dec 100644
+--- a/src/main/java/net/minecraft/server/BlockFlowing.java
++++ b/src/main/java/net/minecraft/server/BlockFlowing.java
+@@ -64,7 +64,8 @@ public class BlockFlowing extends BlockFluids {
+                 }
+             }
+ 
+-            if (this.a >= 2 && this.material == Material.WATER) {
++            // MASpigot start - infinite water sources toggle
++            if (this.a >= 2 && this.material == Material.WATER && com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().infiniteWaterSources) {
+                 IBlockData iblockdata1 = world.getType(blockposition.down());
+ 
+                 if (iblockdata1.getBlock().getMaterial().isBuildable()) {
+@@ -73,6 +74,7 @@ public class BlockFlowing extends BlockFluids {
+                     i1 = 0;
+                 }
+             }
++            // MASpigot end
+ 
+             if (!world.paperSpigotConfig.fastDrainLava && this.material == Material.LAVA && i < 8 && i1 < 8 && i1 > i && random.nextInt(4) != 0) { // PaperSpigot
+                 j *= 4;
+diff --git a/src/main/java/net/minecraft/server/BlockPlant.java b/src/main/java/net/minecraft/server/BlockPlant.java
+index 558ab56e5f2e670dc17e8ffd39d8f09d6d2cd12e..019c30176c56a76831b6f61a233ba3353e126bd1 100644
+--- a/src/main/java/net/minecraft/server/BlockPlant.java
++++ b/src/main/java/net/minecraft/server/BlockPlant.java
+@@ -39,7 +39,11 @@ public class BlockPlant extends Block {
+     }
+ 
+     public void b(World world, BlockPosition blockposition, IBlockData iblockdata, Random random) {
+-        this.e(world, blockposition, iblockdata);
++        // MASpigot start - drop floating plants toggle
++        if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().dropFloatingPlants) {
++            this.e(world, blockposition, iblockdata);
++        }
++        // MASpigot end
+     }
+ 
+     protected void e(World world, BlockPosition blockposition, IBlockData iblockdata) {
+diff --git a/src/main/java/net/minecraft/server/EntityEnderPearl.java b/src/main/java/net/minecraft/server/EntityEnderPearl.java
+index 319c0bc6f621d54ca36e6e2b210a308122f1e070..7e765b5536a4015bb1bbdbde48f2370a6e8f83b6 100644
+--- a/src/main/java/net/minecraft/server/EntityEnderPearl.java
++++ b/src/main/java/net/minecraft/server/EntityEnderPearl.java
+@@ -4,6 +4,9 @@ package net.minecraft.server;
+ import org.bukkit.Bukkit;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.player.PlayerTeleportEvent;
++import org.bukkit.material.Gate;
++import org.bukkit.util.BlockIterator;
++import org.bukkit.util.Vector;
+ // CraftBukkit end
+ 
+ public class EntityEnderPearl extends EntityProjectile {
+@@ -22,6 +25,39 @@ public class EntityEnderPearl extends EntityProjectile {
+     }
+ 
+     protected void a(MovingObjectPosition movingobjectposition) {
++        // MASpigot start - ender pearl block collision toggle
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().enderPearlBlockCollides) {
++            BlockPosition blockPosition = movingobjectposition.a();
++            if (blockPosition != null) {
++                Block block = world.getType(blockPosition).getBlock();
++                if (block == Blocks.FENCE_GATE || block == Blocks.SPRUCE_FENCE_GATE || block == Blocks.BIRCH_FENCE_GATE || block == Blocks.JUNGLE_FENCE_GATE || block == Blocks.DARK_OAK_FENCE_GATE || block == Blocks.ACACIA_FENCE_GATE) {
++                    BlockIterator iterator = null;
++
++                    try {
++                        Vector start = new Vector(locX, locY, locZ);
++                        Vector combined = new Vector(locX + motX, locY + motY, locZ + motZ);
++                        Vector direction = new Vector(combined.getX() - start.getX(), combined.getY() - start.getY(), combined.getZ() - start.getZ()).normalize();
++                        iterator = new BlockIterator(world.getWorld(), start, direction, 0.0, 1);
++                    } catch (IllegalStateException ignored) {
++                    }
++
++                    if (iterator != null) {
++                        boolean open = true;
++                        while (iterator.hasNext()) {
++                            org.bukkit.block.Block next = iterator.next();
++                            if (next.getState().getData() instanceof Gate && !((Gate) next.getState().getData()).isOpen()) {
++                                open = false;
++                                break;
++                            }
++                        }
++
++                        if (open) return;
++                    }
++                } else if (block == Blocks.DOUBLE_PLANT || block == Blocks.REEDS) return;
++            }
++        }
++        // MASpigot end
++
+         EntityLiving entityliving = this.getShooter();
+ 
+         if (movingobjectposition.entity != null) {

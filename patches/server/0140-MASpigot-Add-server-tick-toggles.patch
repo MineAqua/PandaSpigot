@@ -1,0 +1,137 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 16:53:19 -0400
+Subject: [PATCH] MASpigot Add server tick toggles
+
+Adds chunkUnload, entityCollisions, sleepCheck, villagesTicking, blocksTicking, and chunksTicking, each independently disabling that piece of the per-tick server/world work. MASpigot's mobAI toggle was intentionally not ported: PandaSpigot already has an equivalent, actively maintained option (PandaSpigotWorldConfig#disableEntityAi).
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index e6bc80d7ee3b7a4190bbc6ae929499dec8550791..9492ebdd2c86f890fc2c2e1b27ab5ab41bddf8f6 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -149,4 +149,33 @@ public class PandaSpigotConfig {
+         "Default: true")
+     public boolean enderPearlBlockCollides = true;
+     // MASpigot end
++
++    // MASpigot start - server tick toggles
++    @Comment("Whether chunks are allowed to unload. Disabling this keeps every\n" +
++        "loaded chunk in memory permanently.\n" +
++        "Default: true")
++    public boolean chunkUnload = true;
++
++    @Comment("Whether nearby entities push each other apart. Same idea as vanilla's\n" +
++        "collision rule, but as a single global on/off switch.\n" +
++        "Default: true")
++    public boolean entityCollisions = true;
++
++    @Comment("Whether everyone-is-sleeping detection (which skips the night and\n" +
++        "resets time/weather) is checked at all.\n" +
++        "Default: true")
++    public boolean sleepCheck = true;
++
++    @Comment("Whether villages and village sieges are ticked.\n" +
++        "Default: true")
++    public boolean villagesTicking = true;
++
++    @Comment("Whether scheduled block ticks (block updates) run.\n" +
++        "Default: true")
++    public boolean blocksTicking = true;
++
++    @Comment("Whether chunks are ticked (random block ticks, weather effects, etc).\n" +
++        "Default: true")
++    public boolean chunksTicking = true;
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/ChunkProviderServer.java b/src/main/java/net/minecraft/server/ChunkProviderServer.java
+index 041ede2857ddcc6fc8a4f52318ef4ba9d975782a..763a6e96ab649adb0af0f642a285398da6345d7a 100644
+--- a/src/main/java/net/minecraft/server/ChunkProviderServer.java
++++ b/src/main/java/net/minecraft/server/ChunkProviderServer.java
+@@ -56,6 +56,8 @@ public class ChunkProviderServer implements IChunkProvider {
+     }
+ 
+     public void queueUnload(int i, int j) {
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().chunkUnload) return; // MASpigot - chunk unload toggle
++
+         long key = LongHash.toLong(i, j); // PandaSpigot - Only create key once
+         // PaperSpigot start - Asynchronous lighting updates
+         Chunk chunk = chunks.get(key); // PandaSpigot - Reuse key
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index b24ea8a2d8ef1a69cf629162dbc74925462cecc2..b9e752f5d4814fac19dc47760331d3706c05c85c 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -1704,6 +1704,8 @@ public abstract class EntityLiving extends Entity {
+     protected void doTick() {}
+ 
+     protected void bL() {
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().entityCollisions) return; // MASpigot - entity collisions toggle
++
+         List list = this.world.a((Entity) this, this.getBoundingBox().grow(0.20000000298023224D, 0.0D, 0.20000000298023224D), Predicates.and(IEntitySelector.d, new Predicate() {
+             public boolean a(Entity entity) {
+                 return entity.ae();
+diff --git a/src/main/java/net/minecraft/server/WorldServer.java b/src/main/java/net/minecraft/server/WorldServer.java
+index 098d9a8e10b6409a9e0d5bc1226fcfd8b29e13be..00be23c4220a65b00f1633c39caaa4212dd7f5c6 100644
+--- a/src/main/java/net/minecraft/server/WorldServer.java
++++ b/src/main/java/net/minecraft/server/WorldServer.java
+@@ -213,7 +213,7 @@ public class WorldServer extends World implements IAsyncTaskHandler {
+ 
+         this.worldProvider.m().b();
+         boolean timeNeedsSync = false; // PandaSpigot - Wakeup Time Sync
+-        if (this.everyoneDeeplySleeping()) {
++        if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().sleepCheck && this.everyoneDeeplySleeping()) { // MASpigot - sleep check toggle
+             if (this.getGameRules().getBoolean("doDaylightCycle")) {
+                 long i = this.worldData.getDayTime() + 24000L;
+ 
+@@ -252,23 +252,33 @@ public class WorldServer extends World implements IAsyncTaskHandler {
+ 
+         timings.doChunkUnload.stopTiming(); // Spigot
+         this.methodProfiler.c("tickPending");
+-        timings.scheduledBlocks.startTiming(); // Spigot
+-        this.a(false);
+-        timings.scheduledBlocks.stopTiming(); // Spigot
++        // MASpigot start - block/chunk ticking toggles
++        if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().blocksTicking) {
++            timings.scheduledBlocks.startTiming(); // Spigot
++            this.a(false);
++            timings.scheduledBlocks.stopTiming(); // Spigot
++        }
+         this.methodProfiler.c("tickBlocks");
+-        timings.chunkTicks.startTiming(); // Spigot
+-        this.h();
+-        timings.chunkTicks.stopTiming(); // Spigot
++        if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().chunksTicking) {
++            timings.chunkTicks.startTiming(); // Spigot
++            this.h();
++            timings.chunkTicks.stopTiming(); // Spigot
++        }
++        // MASpigot end
+         spigotConfig.antiXrayInstance.flushUpdates(this); // PaperSpigot
+         this.methodProfiler.c("chunkMap");
+         timings.doChunkMap.startTiming(); // Spigot
+         this.manager.flush();
+         timings.doChunkMap.stopTiming(); // Spigot
+         this.methodProfiler.c("village");
+-        timings.doVillages.startTiming(); // Spigot
+-        this.villages.tick();
+-        this.siegeManager.a();
+-        timings.doVillages.stopTiming(); // Spigot
++        // MASpigot start - villages ticking toggle
++        if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().villagesTicking) {
++            timings.doVillages.startTiming(); // Spigot
++            this.villages.tick();
++            this.siegeManager.a();
++            timings.doVillages.stopTiming(); // Spigot
++        }
++        // MASpigot end
+         this.methodProfiler.c("portalForcer");
+         timings.doPortalForcer.startTiming(); // Spigot
+         this.Q.a(this.getTime());
+@@ -296,6 +306,8 @@ public class WorldServer extends World implements IAsyncTaskHandler {
+     }
+ 
+     public void everyoneSleeping() {
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().sleepCheck) return; // MASpigot - sleep check toggle
++
+         this.O = false;
+         if (!this.players.isEmpty()) {
+             int i = 0;

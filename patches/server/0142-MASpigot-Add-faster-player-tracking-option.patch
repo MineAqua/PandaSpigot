@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 16:54:13 -0400
+Subject: [PATCH] MASpigot Add faster player tracking option
+
+Adds playerTrackingInterval, controlling how many ticks pass between position/look updates sent for tracked players (vanilla/Spigot hardcodes this to 2).
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index 31517908eae1d2d4d8d8ca5255f4502037a1a560..32dfa25cb03f00d61dfa44c16e08857c0f2da70e 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -206,4 +206,12 @@ public class PandaSpigotConfig {
+         "Default: 27")
+     public int enderChestSlots = 27;
+     // MASpigot end
++
++    // MASpigot start - faster player tracking
++    @Comment("How many ticks between position/look updates sent for tracked\n" +
++        "players. Vanilla/Spigot default is 2; lowering it sends updates more\n" +
++        "often at the cost of extra network traffic.\n" +
++        "Default: 2")
++    public int playerTrackingInterval = 2;
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/EntityTracker.java b/src/main/java/net/minecraft/server/EntityTracker.java
+index cb72b36725927272fddfdad929b268a7b06140ac..3863b02c63403011320a798c8c5f9d4d35491634 100644
+--- a/src/main/java/net/minecraft/server/EntityTracker.java
++++ b/src/main/java/net/minecraft/server/EntityTracker.java
+@@ -24,7 +24,7 @@ public class EntityTracker {
+ 
+     public void track(Entity entity) {
+         if (entity instanceof EntityPlayer) {
+-            this.addEntity(entity, 512, 2);
++            this.addEntity(entity, 512, com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().playerTrackingInterval); // MASpigot - configurable player tracking interval
+             EntityPlayer entityplayer = (EntityPlayer) entity;
+             Iterator iterator = this.c.iterator();
+ 

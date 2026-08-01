@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 16:55:37 -0400
+Subject: [PATCH] MASpigot Add reduced step sound spam option
+
+Adds reduceStepSounds and reduceStepSoundsCooldownMillis: when enabled, repeated step sounds triggered for the same block position within the configured cooldown are suppressed, deduplicated via a per-position Guava cache.
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index 227ada204b98e11ed7450a064b1bbe4bee6975ac..7478b57c3b5f529a532da12e4137597f7f0b2780 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -65,6 +65,11 @@ public class PandaSpigotConfig {
+             
+             // call after save
+             initWorlds(worldsNode);
++
++            // MASpigot - (re)build the step sound dedupe cache with the configured cooldown
++            stepSoundsCache = com.google.common.cache.CacheBuilder.newBuilder()
++                    .expireAfterWrite(config.reduceStepSoundsCooldownMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
++                    .build();
+         } catch (Exception e) {
+             throw Throwables.propagate(e);
+         }
+@@ -94,7 +99,23 @@ public class PandaSpigotConfig {
+     public static PandaSpigotConfig get() {
+         return config;
+     }
+-    
++
++    // MASpigot start - reduce step sound spam
++    private static com.google.common.cache.Cache<Short, Boolean> stepSoundsCache;
++
++    public static void cacheStepSound(int x, int y, int z) {
++        stepSoundsCache.put(serializeStepSoundCoordinates(x, y, z), Boolean.TRUE);
++    }
++
++    public static boolean canPlayStepSound(int x, int y, int z) {
++        return stepSoundsCache.getIfPresent(serializeStepSoundCoordinates(x, y, z)) == null;
++    }
++
++    private static short serializeStepSoundCoordinates(int x, int y, int z) {
++        return (short) ((x & 15) << 12 | (z & 15) << 8 | y);
++    }
++    // MASpigot end
++
+     //------------------------------------------------------------------------
+     @Comment("On servers with plugins that constantly churn through scoreboards, there is a risk of\n" +
+         "degraded GC performance due to the number of scoreboards held on by weak references.\n" +
+@@ -221,4 +242,15 @@ public class PandaSpigotConfig {
+         "after a teleport.\n" +
+         "Default: true")
+     public boolean firePlayerMoveEvent = true; // MASpigot
++
++    // MASpigot start - reduce step sound spam
++    @Comment("When enabled, repeated step sounds for the same block position are\n" +
++        "suppressed for 'reduceStepSoundsCooldownMillis' milliseconds.\n" +
++        "Default: false")
++    public boolean reduceStepSounds = false;
++
++    @Comment("Cooldown, in milliseconds, used by 'reduceStepSounds'.\n" +
++        "Default: 500")
++    public int reduceStepSoundsCooldownMillis = 500;
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/EntityPlayer.java b/src/main/java/net/minecraft/server/EntityPlayer.java
+index 6008ad2b1dea2bc0f6bf3c8baadfbb850fe2d9fb..9201e4111cd160c414f52d2b88fa28e2ac82ba69 100644
+--- a/src/main/java/net/minecraft/server/EntityPlayer.java
++++ b/src/main/java/net/minecraft/server/EntityPlayer.java
+@@ -105,6 +105,24 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+         // CraftBukkit end
+     }
+ 
++    // MASpigot start - reduce step sound spam
++    @Override
++    protected void a(BlockPosition blockposition, Block block) {
++        if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().reduceStepSounds) {
++            int x = blockposition.getX();
++            int y = blockposition.getY();
++            int z = blockposition.getZ();
++
++            if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.canPlayStepSound(x, y, z)) {
++                return;
++            }
++
++            com.hpfxd.pandaspigot.config.PandaSpigotConfig.cacheStepSound(x, y, z);
++        }
++        super.a(blockposition, block);
++    }
++    // MASpigot end
++
+     // PandaSpigot start - Split spawn point logic
+     public final BlockPosition getSpawnPoint(MinecraftServer minecraftserver, WorldServer worldserver) {
+         BlockPosition blockposition = worldserver.getSpawn();

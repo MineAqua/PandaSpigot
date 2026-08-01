@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 16:55:57 -0400
+Subject: [PATCH] MASpigot Add potion throw physics options
+
+Adds potionFallSpeed, potionThrowMultiplier, and potionThrowOffset, making a thrown potion's fall acceleration, throw power, and aim pitch offset configurable instead of hardcoded vanilla constants.
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index 7478b57c3b5f529a532da12e4137597f7f0b2780..20e2aff279cfaa8e42bd0ffa5c53f0e5e96deb04 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -253,4 +253,18 @@ public class PandaSpigotConfig {
+         "Default: 500")
+     public int reduceStepSoundsCooldownMillis = 500;
+     // MASpigot end
++
++    // MASpigot start - potion throw physics
++    @Comment("Fall speed acceleration applied to thrown potions each tick.\n" +
++        "Default: 0.05")
++    public double potionFallSpeed = 0.05;
++
++    @Comment("Multiplier applied to a thrown potion's initial throwing power.\n" +
++        "Default: 0.5")
++    public double potionThrowMultiplier = 0.5;
++
++    @Comment("Pitch offset, in degrees, applied when aiming a thrown potion.\n" +
++        "Default: -20.0")
++    public double potionThrowOffset = -20.0;
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/EntityPotion.java b/src/main/java/net/minecraft/server/EntityPotion.java
+index fd174c346d0c31f6f4e3b724d84ca1df600d73ff..9a7375071328a337535ad67d251859b77e86c463 100644
+--- a/src/main/java/net/minecraft/server/EntityPotion.java
++++ b/src/main/java/net/minecraft/server/EntityPotion.java
+@@ -32,17 +32,19 @@ public class EntityPotion extends EntityProjectile {
+         this.item = itemstack;
+     }
+ 
++    // MASpigot start - configurable potion throw physics
+     protected float m() {
+-        return 0.05F;
++        return (float) com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().potionFallSpeed;
+     }
+ 
+     protected float j() {
+-        return 0.5F;
++        return (float) com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().potionThrowMultiplier;
+     }
+ 
+     protected float l() {
+-        return -20.0F;
++        return (float) com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().potionThrowOffset;
+     }
++    // MASpigot end
+ 
+     public void setPotionValue(int i) {
+         if (this.item == null) {

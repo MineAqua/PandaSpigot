@@ -1,0 +1,140 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 16:54:00 -0400
+Subject: [PATCH] MASpigot Add player experience toggles
+
+Adds idleTimer, flightCheck, playerDataSaving, hidePlayersFromTab, and enderChestSlots. hidePlayersFromTab controls whether the join tab-list packets still respect visibility (canSee); playerDataSaving disables all player data load/save (position, inventory, enderchest, stats).
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index 9492ebdd2c86f890fc2c2e1b27ab5ab41bddf8f6..31517908eae1d2d4d8d8ca5255f4502037a1a560 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -178,4 +178,32 @@ public class PandaSpigotConfig {
+         "Default: true")
+     public boolean chunksTicking = true;
+     // MASpigot end
++
++    // MASpigot start - player experience toggles
++    @Comment("Whether players are disconnected for being idle past the configured\n" +
++        "idle-timeout. Disabling this ignores idle-timeout entirely.\n" +
++        "Default: true")
++    public boolean idleTimer = true;
++
++    @Comment("Whether the vanilla \"flying is not enabled on this server\" flight\n" +
++        "check kicks floating players.\n" +
++        "Default: true")
++    public boolean flightCheck = true;
++
++    @Comment("Whether players load/save their player data (position, inventory,\n" +
++        "enderchest, stats, etc) from/to disk.\n" +
++        "Default: true")
++    public boolean playerDataSaving = true;
++
++    @Comment("When enabled, the tab list only shows players a viewer can actually\n" +
++        "see (respects vanish/hidePlayer). When disabled, everyone shows up in\n" +
++        "the tab list regardless of visibility.\n" +
++        "Default: true")
++    public boolean hidePlayersFromTab = true;
++
++    @Comment("Number of slots in a player's ender chest. Vanilla is 27 (3 rows);\n" +
++        "should be a multiple of 9.\n" +
++        "Default: 27")
++    public int enderChestSlots = 27;
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/InventoryEnderChest.java b/src/main/java/net/minecraft/server/InventoryEnderChest.java
+index 22c9b0b79960082cc5b94eb4c049cb914d6fc7d2..68b71b125dfb109480ffb55bdb99886402f8efac 100644
+--- a/src/main/java/net/minecraft/server/InventoryEnderChest.java
++++ b/src/main/java/net/minecraft/server/InventoryEnderChest.java
+@@ -45,7 +45,7 @@ public class InventoryEnderChest extends InventorySubcontainer {
+     // CraftBukkit end
+ 
+     public InventoryEnderChest() {
+-        super("container.enderchest", false, 27);
++        super("container.enderchest", false, com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().enderChestSlots); // MASpigot - configurable ender chest size
+     }
+ 
+     public void a(TileEntityEnderChest tileentityenderchest) {
+diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
+index 492e0e9f88689ea4c0e6cb7ca4cf48d58fe13c6e..7c25ff2c7b41e918b2382f5bf6e41a974d180b40 100644
+--- a/src/main/java/net/minecraft/server/PlayerConnection.java
++++ b/src/main/java/net/minecraft/server/PlayerConnection.java
+@@ -158,7 +158,7 @@ public class PlayerConnection implements PacketListenerPlayIn, IUpdatePlayerList
+             --this.m;
+         }
+ 
+-        if (this.player.D() > 0L && this.minecraftServer.getIdleTimeout() > 0 && MinecraftServer.az() - this.player.D() > (long) (this.minecraftServer.getIdleTimeout() * 1000 * 60)) {
++        if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().idleTimer && this.player.D() > 0L && this.minecraftServer.getIdleTimeout() > 0 && MinecraftServer.az() - this.player.D() > (long) (this.minecraftServer.getIdleTimeout() * 1000 * 60)) { // MASpigot - idle timer toggle
+             this.player.resetIdleTimer(); // CraftBukkit - SPIGOT-854
+             this.disconnect("You have been idle for too long!");
+         }
+@@ -461,7 +461,7 @@ public class PlayerConnection implements PacketListenerPlayIn, IUpdatePlayerList
+ 
+                     AxisAlignedBB axisalignedbb = this.player.getBoundingBox().grow((double) f4, (double) f4, (double) f4).a(0.0D, -0.55D, 0.0D);
+ 
+-                    if (!this.minecraftServer.getAllowFlight() && !this.player.abilities.canFly && !worldserver.c(axisalignedbb)) {
++                    if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().flightCheck && !this.minecraftServer.getAllowFlight() && !this.player.abilities.canFly && !worldserver.c(axisalignedbb)) { // MASpigot - flight check toggle
+                         if (d16 >= -0.03125D) {
+                             ++this.g;
+                             if (this.g > 80) {
+diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
+index 412b354d1f57491bcb4f125e8d59e395bfe75da0..10b56ef322cb0d70be1ff5a439f80216694c36a0 100644
+--- a/src/main/java/net/minecraft/server/PlayerList.java
++++ b/src/main/java/net/minecraft/server/PlayerList.java
+@@ -280,6 +280,8 @@ public abstract class PlayerList {
+     }
+ 
+     public NBTTagCompound a(EntityPlayer entityplayer) {
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().playerDataSaving) return null; // MASpigot - player data saving toggle
++
+         NBTTagCompound nbttagcompound = this.server.worlds.get(0).getWorldData().i(); // CraftBukkit
+         NBTTagCompound nbttagcompound1;
+ 
+@@ -295,6 +297,8 @@ public abstract class PlayerList {
+     }
+ 
+     protected void savePlayerFile(EntityPlayer entityplayer) {
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().playerDataSaving) return; // MASpigot - player data saving toggle
++
+         this.playerFileData.save(entityplayer);
+         ServerStatisticManager serverstatisticmanager = (ServerStatisticManager) this.o.get(entityplayer.getUniqueID());
+ 
+@@ -329,15 +333,16 @@ public abstract class PlayerList {
+         // CraftBukkit start - sendAll above replaced with this loop
+         PacketPlayOutPlayerInfo packet = new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.ADD_PLAYER, entityplayer);
+ 
++        final boolean hidePlayersFromTab = com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().hidePlayersFromTab; // MASpigot
+         final List<EntityPlayer> onlinePlayers = Lists.newArrayListWithExpectedSize(this.players.size() - 1); // PandaSpigot - use single player info update packet
+         for (int i = 0; i < this.players.size(); ++i) {
+             EntityPlayer entityplayer1 = (EntityPlayer) this.players.get(i);
+ 
+-            if (entityplayer1.getBukkitEntity().canSee(entityplayer.getBukkitEntity())) {
++            if (!hidePlayersFromTab || entityplayer1.getBukkitEntity().canSee(entityplayer.getBukkitEntity())) { // MASpigot - hide players from tab toggle
+                 entityplayer1.playerConnection.sendPacket(packet);
+             }
+ 
+-            if (entityplayer1 == entityplayer || !entityplayer.getBukkitEntity().canSee(entityplayer1.getBukkitEntity())) { // PandaSpigot - don't include joining player
++            if (entityplayer1 == entityplayer || (hidePlayersFromTab && !entityplayer.getBukkitEntity().canSee(entityplayer1.getBukkitEntity()))) { // PandaSpigot - don't include joining player // MASpigot - hide players from tab toggle
+                 continue;
+             }
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 371906750db087081309f7263de5dfa0c3b61090..354c4388108e06757dd964d9d19f90cf88ed9f60 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -684,11 +684,15 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+ 
+     @Override
+     public void loadData() {
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().playerDataSaving) return; // MASpigot - player data saving toggle
++
+         server.getHandle().playerFileData.load(getHandle());
+     }
+ 
+     @Override
+     public void saveData() {
++        if (!com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().playerDataSaving) return; // MASpigot - player data saving toggle
++
+         server.getHandle().playerFileData.save(getHandle());
+     }
+ 

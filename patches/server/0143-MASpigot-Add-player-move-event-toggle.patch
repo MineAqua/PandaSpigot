@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 16:54:35 -0400
+Subject: [PATCH] MASpigot Add player move event toggle
+
+Adds firePlayerMoveEvent, controlling whether PlayerMoveEvent fires on every movement packet (current PandaSpigot/Spigot behaviour) or skips the first one after a teleport like vanilla. MASpigot's MovementHandler extension point was intentionally not ported: it had no remaining consumer once the KnockbackProfile combat rewrite was excluded from this port.
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index 32dfa25cb03f00d61dfa44c16e08857c0f2da70e..227ada204b98e11ed7450a064b1bbe4bee6975ac 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -214,4 +214,11 @@ public class PandaSpigotConfig {
+         "Default: 2")
+     public int playerTrackingInterval = 2;
+     // MASpigot end
++
++    @Comment("Whether PlayerMoveEvent fires for every movement packet, matching\n" +
++        "Spigot's \"don't skip any move events\" behaviour. Disabling this\n" +
++        "restores the vanilla behaviour of skipping the first move event\n" +
++        "after a teleport.\n" +
++        "Default: true")
++    public boolean firePlayerMoveEvent = true; // MASpigot
+ }
+diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
+index 7c25ff2c7b41e918b2382f5bf6e41a974d180b40..64c9a96682c1da8a80675b668785b874faf79348 100644
+--- a/src/main/java/net/minecraft/server/PlayerConnection.java
++++ b/src/main/java/net/minecraft/server/PlayerConnection.java
+@@ -281,7 +281,7 @@ public class PlayerConnection implements PacketListenerPlayIn, IUpdatePlayerList
+                     this.lastPitch = to.getPitch();
+ 
+                     // Skip the first time we do this
+-                    if (true) { // Spigot - don't skip any move events
++                    if (com.hpfxd.pandaspigot.config.PandaSpigotConfig.get().firePlayerMoveEvent) { // Spigot - don't skip any move events // MASpigot - configurable
+                         Location oldTo = to.clone();
+                         PlayerMoveEvent event = new PlayerMoveEvent(player, from, to);
+                         this.server.getPluginManager().callEvent(event);
