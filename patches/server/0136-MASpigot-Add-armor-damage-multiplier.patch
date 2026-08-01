@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 15:46:51 -0400
+Subject: [PATCH] MASpigot Add armor damage multiplier
+
+Adds a reduceArmorDamage world option (default false) and an armorDamageMultiplier world option (default 1.0). When reduceArmorDamage is enabled, armor durability damage taken by players is scaled by 4.0 / armorDamageMultiplier instead of the vanilla flat divide-by-4; the multiplier has no effect while reduceArmorDamage is disabled.
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+index fc00a5f67c5a6b2642c23834da1bef31338e2f07..d18af288085fe6bab3f378d6269b3d4b97314aba 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+@@ -50,6 +50,17 @@ public class PandaSpigotWorldConfig {
+         public double extraVertical = 0.1;
+     }
+ 
++    @Comment("When enabled, armor durability damage taken by players is scaled by\n" +
++            "'armorDamageMultiplier' instead of vanilla armor damage.\n" +
++            "Default: false")
++    public boolean reduceArmorDamage = false;
++
++    @Comment("Multiplier applied to armor durability damage when 'reduceArmorDamage'\n" +
++            "is enabled. Values below 1.0 reduce armor durability loss, values above\n" +
++            "1.0 increase it. Has no effect unless 'reduceArmorDamage' is true.\n" +
++            "Default: 1.0")
++    public double armorDamageMultiplier = 1.0;
++
+     public boolean optimizeTntMovement = false; // May not fully emulate vanilla behavior
+ 
+     public boolean optimizeLiquidExplosions = true; // This seems like a pretty sane default
+diff --git a/src/main/java/net/minecraft/server/PlayerInventory.java b/src/main/java/net/minecraft/server/PlayerInventory.java
+index 76fa51d97e9a938d4198bbe657d77900f6327744..21a30fd689c2d4db8b228c51ec25de675d3ea18d 100644
+--- a/src/main/java/net/minecraft/server/PlayerInventory.java
++++ b/src/main/java/net/minecraft/server/PlayerInventory.java
+@@ -478,7 +478,10 @@ public class PlayerInventory implements IInventory {
+     }
+ 
+     public void a(float f) {
+-        f /= 4.0F;
++        // MASpigot start - configurable armor damage multiplier
++        com.hpfxd.pandaspigot.config.PandaSpigotWorldConfig config = this.player.world.pandaSpigotConfig;
++        f /= config.reduceArmorDamage ? (4.0F / (float) config.armorDamageMultiplier) : 4.0F;
++        // MASpigot end
+         if (f < 1.0F) {
+             f = 1.0F;
+         }

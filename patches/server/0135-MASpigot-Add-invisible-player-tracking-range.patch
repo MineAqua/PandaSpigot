@@ -1,0 +1,162 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 15:46:44 -0400
+Subject: [PATCH] MASpigot Add invisible player tracking range
+
+Adds a separate entity-tracking-range.invisible-players world option, applied to players with the invisibility effect instead of the normal player tracking range. The range is recalculated immediately whenever invisibility is added/removed or armor is equipped/unequipped. An additional disable-invisible-tracking-range-with-armor option (default true) makes the reduced range only apply while the player has no armor equipped.
+
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index 32752dfad24bc7883b1ab52e29834f1aa6fa60c6..b24ea8a2d8ef1a69cf629162dbc74925462cecc2 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -1492,6 +1492,12 @@ public abstract class EntityLiving extends Entity {
+                 ItemStack itemstack1 = this.getEquipment(j);
+ 
+                 if (!ItemStack.matches(itemstack1, itemstack)) {
++                    // MASpigot start - re-check invisible tracking range on armor change
++                    if (this instanceof EntityPlayer) {
++                        org.spigotmc.TrackingRange.handleInvisibleTrackingRange((EntityPlayer) this);
++                    }
++                    // MASpigot end
++
+                     ((WorldServer) this.world).getTracker().a((Entity) this, (Packet) (new PacketPlayOutEntityEquipment(this.getId(), j, itemstack1)));
+                     if (itemstack != null) {
+                         this.c.a(itemstack.B());
+diff --git a/src/main/java/net/minecraft/server/EntityPlayer.java b/src/main/java/net/minecraft/server/EntityPlayer.java
+index 3b5ebd9c9f58fd40c192c041ade7916219a4ee83..6008ad2b1dea2bc0f6bf3c8baadfbb850fe2d9fb 100644
+--- a/src/main/java/net/minecraft/server/EntityPlayer.java
++++ b/src/main/java/net/minecraft/server/EntityPlayer.java
+@@ -939,6 +939,22 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+ 
+     }
+ 
++    // MASpigot start - update tracking range when adding/removing invisibility effect
++    @Override
++    public void addEffect(MobEffect mobeffect) {
++        super.addEffect(mobeffect);
++
++        org.spigotmc.TrackingRange.handleInvisibleTrackingRange(this);
++    }
++
++    @Override
++    public void removeEffect(int i) {
++        super.removeEffect(i);
++
++        org.spigotmc.TrackingRange.handleInvisibleTrackingRange(this);
++    }
++    // MASpigot end
++
+     public void copyTo(EntityHuman entityhuman, boolean flag) {
+         super.copyTo(entityhuman, flag);
+         this.lastSentExp = -1;
+diff --git a/src/main/java/org/spigotmc/SpigotWorldConfig.java b/src/main/java/org/spigotmc/SpigotWorldConfig.java
+index c028e9ff37e37f08f7c764a59cf77f5b447b0655..c8424ef9cd95e58c071fb38e795af9201bed09df 100644
+--- a/src/main/java/org/spigotmc/SpigotWorldConfig.java
++++ b/src/main/java/org/spigotmc/SpigotWorldConfig.java
+@@ -154,6 +154,7 @@ public class SpigotWorldConfig
+     }
+ 
+     public int playerTrackingRange = 48;
++    public int invisiblePlayerTrackingRange = 16; // MASpigot - individual tracking range for invisible players
+     public int animalTrackingRange = 48;
+     public int monsterTrackingRange = 48;
+     public int miscTrackingRange = 32;
+@@ -161,13 +162,23 @@ public class SpigotWorldConfig
+     private void trackingRange()
+     {
+         playerTrackingRange = getInt( "entity-tracking-range.players", playerTrackingRange );
++        invisiblePlayerTrackingRange = getInt( "entity-tracking-range.invisible-players", invisiblePlayerTrackingRange ); // MASpigot
+         animalTrackingRange = getInt( "entity-tracking-range.animals", animalTrackingRange );
+         monsterTrackingRange = getInt( "entity-tracking-range.monsters", monsterTrackingRange );
+         miscTrackingRange = getInt( "entity-tracking-range.misc", miscTrackingRange );
+         otherTrackingRange = getInt( "entity-tracking-range.other", otherTrackingRange );
+-        log( "Entity Tracking Range: Pl " + playerTrackingRange + " / An " + animalTrackingRange + " / Mo " + monsterTrackingRange + " / Mi " + miscTrackingRange + " / Other " + otherTrackingRange );
++        log( "Entity Tracking Range: Pl " + playerTrackingRange + " / Ipl " + invisiblePlayerTrackingRange + " / An " + animalTrackingRange + " / Mo " + monsterTrackingRange + " / Mi " + miscTrackingRange + " / Other " + otherTrackingRange );
+     }
+ 
++    // MASpigot start - option to also use the invisible tracking range when not wearing any armor
++    public boolean disableInvisibleTrackingRangeWithArmor = true;
++    private void disableInvisibleTrackingRangeWithArmor()
++    {
++        disableInvisibleTrackingRangeWithArmor = getBoolean( "disable-invisible-tracking-range-with-armor", disableInvisibleTrackingRangeWithArmor );
++        log( "Disable Invisible Tracking Range With Armor: " + disableInvisibleTrackingRangeWithArmor );
++    }
++    // MASpigot end
++
+     public int hopperTransfer;
+     public int hopperCheck;
+     public int hopperAmount;
+diff --git a/src/main/java/org/spigotmc/TrackingRange.java b/src/main/java/org/spigotmc/TrackingRange.java
+index 9ed203517647d1e81ee04dd2fb1288aa0f1cd7fd..ee10ca964107aee0f30b71d7cc53a7b4789216fc 100644
+--- a/src/main/java/org/spigotmc/TrackingRange.java
++++ b/src/main/java/org/spigotmc/TrackingRange.java
+@@ -7,6 +7,12 @@ import net.minecraft.server.EntityItem;
+ import net.minecraft.server.EntityItemFrame;
+ import net.minecraft.server.EntityPainting;
+ import net.minecraft.server.EntityPlayer;
++import net.minecraft.server.EntityTracker;
++import net.minecraft.server.EntityTrackerEntry;
++import net.minecraft.server.ItemStack;
++import net.minecraft.server.MobEffectList;
++import net.minecraft.server.World;
++import net.minecraft.server.WorldServer;
+ 
+ public class TrackingRange
+ {
+@@ -25,7 +31,17 @@ public class TrackingRange
+         SpigotWorldConfig config = entity.world.spigotConfig;
+         if ( entity instanceof EntityPlayer )
+         {
+-            i = config.playerTrackingRange;
++            // MASpigot start - individual tracking range for invisible players
++            EntityPlayer player = (EntityPlayer) entity;
++            if ( player.hasEffect( MobEffectList.INVISIBILITY.id )
++                    && !( config.disableInvisibleTrackingRangeWithArmor && hasAnyArmor( player ) ) )
++            {
++                i = config.invisiblePlayerTrackingRange;
++            } else
++            {
++                i = config.playerTrackingRange;
++            }
++            // MASpigot end
+         }  else if ( entity.activationType == 1 )
+         {
+             i = config.monsterTrackingRange;
+@@ -58,4 +74,37 @@ public class TrackingRange
+ 
+         return i;
+     }
++
++    // MASpigot start - update tracking range when adding/removing invisibility, or (un)equipping armor
++    public static void handleInvisibleTrackingRange(EntityPlayer player)
++    {
++        World world = player.world;
++
++        EntityTracker tracker = ( (WorldServer) world ).getTracker();
++        EntityTrackerEntry entry = tracker.trackedEntities.get( player.getId() );
++        if ( entry != null )
++        {
++            int range = getEntityTrackingRange( player, -1 );
++            if ( entry.b == range )
++            {
++                return;
++            }
++
++            entry.b = range;
++            entry.scanPlayers( world.players );
++        }
++    }
++
++    private static boolean hasAnyArmor(EntityPlayer player)
++    {
++        for ( ItemStack item : player.inventory.armor )
++        {
++            if ( item != null )
++            {
++                return true;
++            }
++        }
++        return false;
++    }
++    // MASpigot end
+ }

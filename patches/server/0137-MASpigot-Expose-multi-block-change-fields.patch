@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 15:47:00 -0400
+Subject: [PATCH] MASpigot Expose multi block change fields
+
+Adds getters and setters for the chunk coordinate pair and block infos of PacketPlayOutMultiBlockChange, so plugins/internal code can construct and send a multi block change packet manually instead of only via the chunk-based constructor.
+
+diff --git a/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java b/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java
+index fcd9d89f32a16b5e05e03bb3489068d868d59396..8e8bd739a9c664a674a8a72bde7b4fafcaf16d9f 100644
+--- a/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java
++++ b/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java
+@@ -19,6 +19,24 @@ public class PacketPlayOutMultiBlockChange implements Packet<PacketListenerPlayO
+ 
+     }
+ 
++    // MASpigot start - expose chunk coord pair and block infos
++    public ChunkCoordIntPair getChunkCoordIntPair() {
++        return this.a;
++    }
++
++    public void setChunkCoordIntPair(ChunkCoordIntPair pair) {
++        this.a = pair;
++    }
++
++    public MultiBlockChangeInfo[] getMultiBlockChangeInfos() {
++        return this.b;
++    }
++
++    public void setMultiBlockChangeInfos(MultiBlockChangeInfo[] infos) {
++        this.b = infos;
++    }
++    // MASpigot end
++
+     @Override
+     public void a(PacketDataSerializer packetdataserializer) throws IOException {
+         this.a = new ChunkCoordIntPair(packetdataserializer.readInt(), packetdataserializer.readInt());

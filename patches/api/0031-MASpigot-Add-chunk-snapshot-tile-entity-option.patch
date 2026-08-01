@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 15:47:31 -0400
+Subject: [PATCH] MASpigot Add chunk snapshot tile entity option
+
+Adds Chunk#takeSnapshot()/takeSnapshot(boolean)/restoreSnapshot(DummyChunkSnapshot)/restoreSnapshot(DummyChunkSnapshot, boolean) to the Chunk API, backed by a new DummyChunkSnapshot marker interface. Counterpart to the matching PandaSpigot-Server patch.
+
+diff --git a/src/main/java/org/bukkit/Chunk.java b/src/main/java/org/bukkit/Chunk.java
+index 0510151768403871d2e34972a389b119159bc62d..cb2aeaee59d084217b9dafe826c95193cf2c7212 100644
+--- a/src/main/java/org/bukkit/Chunk.java
++++ b/src/main/java/org/bukkit/Chunk.java
+@@ -3,6 +3,7 @@ package org.bukkit;
+ import org.bukkit.block.Block;
+ import org.bukkit.block.BlockState;
+ import org.bukkit.entity.Entity;
++import us.mineaqua.spigot.chunk.DummyChunkSnapshot; // MASpigot
+ 
+ /**
+  * Represents a chunk of blocks
+@@ -121,4 +122,38 @@ public interface Chunk {
+      * @return true if the chunk has unloaded successfully, otherwise false
+      */
+     boolean unload();
++
++    // MASpigot start - chunk snapshot with tile entities
++    /**
++     * Takes a restorable snapshot of this chunk's block data, without tile entities.
++     *
++     * @return a restorable chunk snapshot
++     */
++    DummyChunkSnapshot takeSnapshot();
++
++    /**
++     * Takes a restorable snapshot of this chunk's block data, optionally including tile entities.
++     *
++     * @param includeTileEntities if true, the snapshot also captures tile entity NBT data
++     * @return a restorable chunk snapshot
++     */
++    DummyChunkSnapshot takeSnapshot(boolean includeTileEntities);
++
++    /**
++     * Restores this chunk's block data from a snapshot previously captured with
++     * {@link #takeSnapshot()}, without touching tile entities.
++     *
++     * @param snapshot the snapshot to restore
++     */
++    void restoreSnapshot(DummyChunkSnapshot snapshot);
++
++    /**
++     * Restores this chunk's block data from a snapshot previously captured with
++     * {@link #takeSnapshot(boolean)}, optionally restoring tile entities as well.
++     *
++     * @param snapshot the snapshot to restore
++     * @param includeTileEntities if true, tile entities captured in the snapshot are also restored
++     */
++    void restoreSnapshot(DummyChunkSnapshot snapshot, boolean includeTileEntities);
++    // MASpigot end
+ }
+diff --git a/src/main/java/us/mineaqua/spigot/chunk/DummyChunkSnapshot.java b/src/main/java/us/mineaqua/spigot/chunk/DummyChunkSnapshot.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..53e161ff3ed1af9fc3f4025f4a8370409ee6c650
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/chunk/DummyChunkSnapshot.java
+@@ -0,0 +1,6 @@
++package us.mineaqua.spigot.chunk;
++
++// MASpigot - marker interface for a manual, restorable chunk snapshot taken via Chunk#takeSnapshot()
++public interface DummyChunkSnapshot {
++
++}

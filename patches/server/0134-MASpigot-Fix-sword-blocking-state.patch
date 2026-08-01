@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 15:46:26 -0400
+Subject: [PATCH] MASpigot Fix sword blocking state
+
+Unblock the player before opening any container (tile entity, chest, merchant, or horse inventory), and unblock immediately after a melee attack instead of waiting for the client's own release packet. This prevents the client and server blocking state from desyncing.
+
+diff --git a/src/main/java/net/minecraft/server/EntityPlayer.java b/src/main/java/net/minecraft/server/EntityPlayer.java
+index 6f804d5b1eaa085366b5213a98bc412cada1f078..3b5ebd9c9f58fd40c192c041ade7916219a4ee83 100644
+--- a/src/main/java/net/minecraft/server/EntityPlayer.java
++++ b/src/main/java/net/minecraft/server/EntityPlayer.java
+@@ -680,6 +680,7 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+             return;
+         }
+         // CraftBukkit end
++        this.bU(); // MASpigot - unblock before opening a container
+         this.nextContainerCounter();
+         this.playerConnection.sendPacket(new PacketPlayOutOpenWindow(this.containerCounter, itileentitycontainer.getContainerName(), itileentitycontainer.getScoreboardDisplayName()));
+         this.activeContainer = container; // CraftBukkit
+@@ -724,6 +725,7 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+             }
+         }
+ 
++        this.bU(); // MASpigot - unblock before opening a container
+         this.nextContainerCounter();
+         if (iinventory instanceof ITileEntityContainer) {
+             this.playerConnection.sendPacket(new PacketPlayOutOpenWindow(this.containerCounter, ((ITileEntityContainer) iinventory).getContainerName(), iinventory.getScoreboardDisplayName(), iinventory.getSize()));
+@@ -744,6 +746,7 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+             return;
+         }
+         // CraftBukkit end
++        this.bU(); // MASpigot - unblock before opening a container
+         this.nextContainerCounter();
+         this.activeContainer = container; // CraftBukkit
+         this.activeContainer.windowId = this.containerCounter;
+@@ -776,6 +779,7 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+             this.closeInventory();
+         }
+ 
++        this.bU(); // MASpigot - unblock before opening a container
+         this.nextContainerCounter();
+         this.playerConnection.sendPacket(new PacketPlayOutOpenWindow(this.containerCounter, "EntityHorse", iinventory.getScoreboardDisplayName(), iinventory.getSize(), entityhorse.getId()));
+         this.activeContainer = container;
+diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
+index a4c9ee61ca31700b35250cb014f31ffc413cbf8c..492e0e9f88689ea4c0e6cb7ca4cf48d58fe13c6e 100644
+--- a/src/main/java/net/minecraft/server/PlayerConnection.java
++++ b/src/main/java/net/minecraft/server/PlayerConnection.java
+@@ -1413,6 +1413,12 @@ public class PlayerConnection implements PacketListenerPlayIn, IUpdatePlayerList
+ 
+                     this.player.attack(entity);
+ 
++                    // MASpigot start - fix sword blocking de-sync on player attack
++                    if (this.player.isBlocking()) {
++                        this.player.bU();
++                    }
++                    // MASpigot end
++
+                     // CraftBukkit start
+                     if (itemInHand != null && itemInHand.count <= -1) {
+                         this.player.updateInventory(this.player.activeContainer);
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftHumanEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftHumanEntity.java
+index 8a08babc132e992d3613e1281dac12875380990c..3c00973d445f82bfe3810e393c925d3cf6a18225 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftHumanEntity.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftHumanEntity.java
+@@ -270,6 +270,8 @@ public class CraftHumanEntity extends CraftLivingEntity implements HumanEntity {
+             size = 0;
+         }
+ 
++        player.bU(); // MASpigot - unblock before opening a container
++
+         player.playerConnection.sendPacket(new PacketPlayOutOpenWindow(container.windowId, windowType, new ChatComponentText(title), size));
+         getHandle().activeContainer = container;
+         getHandle().activeContainer.addSlotListener(player);
+@@ -337,6 +339,8 @@ public class CraftHumanEntity extends CraftLivingEntity implements HumanEntity {
+             return;
+         }
+ 
++        player.bU(); // MASpigot - unblock before opening a container
++
+         // Now open the window
+         InventoryType type = inventory.getType();
+         String windowType = CraftContainer.getNotchInventoryType(type);
+diff --git a/src/main/java/org/bukkit/craftbukkit/inventory/CraftContainer.java b/src/main/java/org/bukkit/craftbukkit/inventory/CraftContainer.java
+index 7fc4791cc7eb040fcb520262d38fccc39bd81a56..f3a966526a50db636b6b9d247324f6b8ac118e6a 100644
+--- a/src/main/java/org/bukkit/craftbukkit/inventory/CraftContainer.java
++++ b/src/main/java/org/bukkit/craftbukkit/inventory/CraftContainer.java
+@@ -85,6 +85,8 @@ public class CraftContainer extends Container {
+             if (typeChanged) {
+                 setupSlots(top, bottom);
+             }
++            player.getHandle().bU(); // MASpigot - unblock before opening a container
++
+             int size = getSize();
+             player.getHandle().playerConnection.sendPacket(new PacketPlayOutOpenWindow(this.windowId, type, new ChatComponentText(cachedTitle), size));
+             player.updateInventory();

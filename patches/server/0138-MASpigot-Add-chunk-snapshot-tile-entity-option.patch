@@ -1,0 +1,331 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 1 Aug 2026 15:47:14 -0400
+Subject: [PATCH] MASpigot Add chunk snapshot tile entity option
+
+Adds Chunk#takeSnapshot()/restoreSnapshot(), a lightweight in-memory chunk snapshot (block data plus, optionally, tile entity NBT) that a plugin can capture and later restore in place, distinct from Bukkit's read-only ChunkSnapshot API. Chunk sections are cloned via new ChunkSection/NibbleArray snapshot helpers. Restoring a snapshot marks the chunk dirty and forces an immediate resend to viewing players via a new PlayerChunkMap#resend(x, z) helper.
+
+diff --git a/src/main/java/net/minecraft/server/ChunkSection.java b/src/main/java/net/minecraft/server/ChunkSection.java
+index 907c57b8cc6eba92597e5c2819bc972b05fd366b..2c1d80c36535c93350b6541c2ad4bc2fe55fa2d1 100644
+--- a/src/main/java/net/minecraft/server/ChunkSection.java
++++ b/src/main/java/net/minecraft/server/ChunkSection.java
+@@ -1,5 +1,7 @@
+ package net.minecraft.server;
+ 
++import us.mineaqua.spigot.server.chunk.ChunkSectionSnapshot; // MASpigot
++
+ public class ChunkSection {
+ 
+     private int yPos;
+@@ -145,4 +147,33 @@ public class ChunkSection {
+     public void b(NibbleArray nibblearray) {
+         this.skyLight = nibblearray;
+     }
++
++    // MASpigot start - chunk snapshot with tile entities
++    private static char[] clone(char[] chars) {
++        return chars != null ? chars.clone() : null;
++    }
++
++    private static NibbleArray clone(NibbleArray array) {
++        return array != null ? array.clone() : null;
++    }
++
++    public ChunkSectionSnapshot createSnapshot() {
++        return new ChunkSectionSnapshot(
++                nonEmptyBlockCount,
++                tickingBlockCount,
++                clone(blockIds),
++                clone(emittedLight),
++                clone(skyLight)
++        );
++    }
++
++    public void restoreSnapshot(ChunkSectionSnapshot snapshot) {
++        nonEmptyBlockCount = snapshot.getNonEmptyBlockCount();
++        tickingBlockCount = snapshot.getTickingBlockCount();
++        blockIds = clone(snapshot.getBlockIds());
++        emittedLight = clone(snapshot.getEmittedLight());
++        skyLight = clone(snapshot.getSkyLight());
++        isDirty = true;
++    }
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/NibbleArray.java b/src/main/java/net/minecraft/server/NibbleArray.java
+index a69c0bc8479d69ce9eefab48f13699d0402aa5cc..c8a01be3132146bba87be1a6e0c177040f8f5160 100644
+--- a/src/main/java/net/minecraft/server/NibbleArray.java
++++ b/src/main/java/net/minecraft/server/NibbleArray.java
+@@ -53,4 +53,11 @@ public class NibbleArray {
+     public byte[] a() {
+         return this.a;
+     }
++
++    // MASpigot start - chunk snapshot with tile entities
++    @Override
++    public NibbleArray clone() {
++        return new NibbleArray(this.a.clone());
++    }
++    // MASpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/PlayerChunkMap.java b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+index 6a489b4514d565b47d930a6ed1abf94cd863cf54..be9aaf6a418653a715c41d76df5a4f30c077dc1c 100644
+--- a/src/main/java/net/minecraft/server/PlayerChunkMap.java
++++ b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+@@ -520,6 +520,17 @@ public class PlayerChunkMap {
+ 
+         }
+ 
++        // MASpigot start - method to force the chunk map to resend this chunk
++        public void resend() {
++            if (this.dirtyCount == 0) {
++                PlayerChunkMap.this.e.add(this);
++            }
++
++            this.dirtyCount = 64;
++            this.f = 0xFFFF;
++        }
++        // MASpigot end
++
+         public void a(Packet packet) {
+             for (int i = 0; i < this.b.size(); ++i) {
+                 EntityPlayer entityplayer = (EntityPlayer) this.b.get(i);
+@@ -657,4 +668,13 @@ public class PlayerChunkMap {
+         }
+     }
+     // CraftBukkit end
++
++    // MASpigot start - method to resend chunk by given coordinates
++    public void resend(int x, int z) {
++        PlayerChunk chunk = this.a(x, z, true);
++        if (chunk != null) {
++            chunk.resend();
++        }
++    }
++    // MASpigot end
+ }
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
+index c2f902c15e27da820a2d7c0aaad6d32429e1c6ff..5b1b6199f5cfc998cd6a2e07b9795b6b442e4a6c 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
+@@ -1,7 +1,9 @@
+ package org.bukkit.craftbukkit;
+ 
+ import java.lang.ref.WeakReference;
++import java.util.ArrayList;
+ import java.util.Arrays;
++import java.util.Map;
+ 
+ import net.minecraft.server.*;
+ 
+@@ -10,8 +12,14 @@ import org.bukkit.World;
+ import org.bukkit.block.Block;
+ import org.bukkit.block.BlockState;
+ import org.bukkit.craftbukkit.block.CraftBlock;
++import org.bukkit.craftbukkit.entity.CraftHumanEntity;
+ import org.bukkit.entity.Entity;
++import org.bukkit.entity.HumanEntity;
+ import org.bukkit.ChunkSnapshot;
++// MASpigot start - chunk snapshot with tile entities
++import us.mineaqua.spigot.chunk.DummyChunkSnapshot;
++import us.mineaqua.spigot.server.chunk.CraftDummyChunkSnapshot;
++// MASpigot end
+ 
+ public class CraftChunk implements Chunk {
+     private WeakReference<net.minecraft.server.Chunk> weakChunk;
+@@ -310,4 +318,106 @@ public class CraftChunk implements Chunk {
+     static {
+         Arrays.fill(emptySkyLight, (byte) 0xFF);
+     }
++
++    // MASpigot start - chunk snapshot with tile entities
++    @Override
++    public DummyChunkSnapshot takeSnapshot() {
++        return takeSnapshot(false);
++    }
++
++    @Override
++    public DummyChunkSnapshot takeSnapshot(boolean includeTileEntities) {
++        net.minecraft.server.Chunk handle = getHandle();
++        CraftDummyChunkSnapshot snapshot = new CraftDummyChunkSnapshot();
++
++        // save chunk sections to snapshot
++        ChunkSection[] sections = handle.getSections();
++        for (int i = 0; i < sections.length; i++) {
++            if (sections[i] != null) {
++                snapshot.getSections()[i] = sections[i].createSnapshot();
++            }
++        }
++
++        if (!includeTileEntities || handle.tileEntities.isEmpty()) {
++            return snapshot;
++        }
++
++        // save tile entities to snapshot
++        for (Map.Entry<BlockPosition, TileEntity> entry : handle.tileEntities.entrySet()) {
++            NBTTagCompound nbt = new NBTTagCompound();
++            entry.getValue().b(nbt); // writeToNBT
++
++            // overwrite as a relative position to the chunk (& 15 always returns a positive value)
++            BlockPosition position = entry.getValue().getPosition();
++            nbt.setInt("x", position.getX() & 15);
++            nbt.setInt("z", position.getZ() & 15);
++
++            snapshot.getTileEntities().add(nbt);
++        }
++
++        return snapshot;
++    }
++
++    @Override
++    public void restoreSnapshot(DummyChunkSnapshot snapshot) {
++        restoreSnapshot(snapshot, false);
++    }
++
++    @Override
++    public void restoreSnapshot(DummyChunkSnapshot snapshot, boolean includeTileEntities) {
++        CraftDummyChunkSnapshot snap = (CraftDummyChunkSnapshot) snapshot;
++        net.minecraft.server.Chunk handle = getHandle();
++
++        // add chunk sections from snapshot
++        for (int i = 0; i < 16; i++) {
++            if (snap.getSections()[i] == null) {
++                handle.getSections()[i] = null;
++            } else {
++                handle.getSections()[i] = new ChunkSection(i << 4, !worldServer.worldProvider.o());
++                handle.getSections()[i].restoreSnapshot(snap.getSections()[i]);
++            }
++        }
++
++        if (includeTileEntities && !snap.getTileEntities().isEmpty()) {
++            // close any inventories currently open into a tile entity being replaced
++            for (TileEntity tileEntity : handle.tileEntities.values()) {
++                if (tileEntity instanceof IInventory) {
++                    for (HumanEntity human : new ArrayList<>(((IInventory) tileEntity).getViewers())) {
++                        if (human instanceof CraftHumanEntity) {
++                            ((CraftHumanEntity) human).getHandle().closeInventory();
++                        }
++                    }
++                }
++            }
++
++            // remove tile entities currently in the chunk to avoid duplicates
++            worldServer.tileEntityList.removeAll(handle.tileEntities.values());
++            handle.tileEntities.clear();
++
++            // add tile entities from snapshot
++            for (NBTTagCompound nbt : snap.getTileEntities()) {
++                // deserialize nbt to new tile entity instance
++                TileEntity tileEntity = TileEntity.c(nbt);
++
++                // tile entity position is relative to the chunk; move it into this chunk's space
++                BlockPosition relative = tileEntity.getPosition();
++                BlockPosition position = new BlockPosition(
++                        (handle.locX << 4) + relative.getX(),
++                        relative.getY(),
++                        (handle.locZ << 4) + relative.getZ()
++                );
++
++                tileEntity.a(worldServer);
++                tileEntity.a(position);
++                tileEntity.D();
++
++                handle.tileEntities.put(position, tileEntity);
++                worldServer.a(tileEntity); // adds it to the world's tick list if it needs ticking
++            }
++        }
++
++        handle.f(true);
++        worldServer.getPlayerChunkMap().resend(x, z);
++    }
++    // MASpigot end
+ }
+diff --git a/src/main/java/us/mineaqua/spigot/server/chunk/ChunkSectionSnapshot.java b/src/main/java/us/mineaqua/spigot/server/chunk/ChunkSectionSnapshot.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..eecdbb08abadb7a2010a33c11777a5b73a05c962
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/server/chunk/ChunkSectionSnapshot.java
+@@ -0,0 +1,47 @@
++package us.mineaqua.spigot.server.chunk;
++
++import net.minecraft.server.NibbleArray;
++
++// MASpigot - immutable snapshot of a ChunkSection's contents, used by Chunk#takeSnapshot()/restoreSnapshot()
++public final class ChunkSectionSnapshot {
++
++    private final int nonEmptyBlockCount;
++    private final int tickingBlockCount;
++    private final char[] blockIds;
++    private final NibbleArray emittedLight;
++    private final NibbleArray skyLight;
++
++    public ChunkSectionSnapshot(
++            int nonEmptyBlockCount,
++            int tickingBlockCount,
++            char[] blockIds,
++            NibbleArray emittedLight,
++            NibbleArray skyLight
++    ) {
++        this.nonEmptyBlockCount = nonEmptyBlockCount;
++        this.tickingBlockCount = tickingBlockCount;
++        this.blockIds = blockIds;
++        this.emittedLight = emittedLight;
++        this.skyLight = skyLight;
++    }
++
++    public int getNonEmptyBlockCount() {
++        return nonEmptyBlockCount;
++    }
++
++    public int getTickingBlockCount() {
++        return tickingBlockCount;
++    }
++
++    public char[] getBlockIds() {
++        return blockIds;
++    }
++
++    public NibbleArray getEmittedLight() {
++        return emittedLight;
++    }
++
++    public NibbleArray getSkyLight() {
++        return skyLight;
++    }
++}
+diff --git a/src/main/java/us/mineaqua/spigot/server/chunk/CraftDummyChunkSnapshot.java b/src/main/java/us/mineaqua/spigot/server/chunk/CraftDummyChunkSnapshot.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..49fa52ad3562fcfb048acf6053d2435efc90c73d
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/server/chunk/CraftDummyChunkSnapshot.java
+@@ -0,0 +1,31 @@
++package us.mineaqua.spigot.server.chunk;
++
++import net.minecraft.server.NBTTagCompound;
++import us.mineaqua.spigot.chunk.DummyChunkSnapshot;
++
++import java.util.ArrayList;
++import java.util.List;
++
++// MASpigot - server-side implementation of DummyChunkSnapshot, backed by ChunkSectionSnapshots and raw tile entity NBT
++public final class CraftDummyChunkSnapshot implements DummyChunkSnapshot {
++
++    private final ChunkSectionSnapshot[] sections;
++    private final List<NBTTagCompound> tileEntities;
++
++    public CraftDummyChunkSnapshot(ChunkSectionSnapshot[] sections, List<NBTTagCompound> tileEntities) {
++        this.sections = sections;
++        this.tileEntities = tileEntities;
++    }
++
++    public CraftDummyChunkSnapshot() {
++        this(new ChunkSectionSnapshot[16], new ArrayList<>());
++    }
++
++    public ChunkSectionSnapshot[] getSections() {
++        return sections;
++    }
++
++    public List<NBTTagCompound> getTileEntities() {
++        return tileEntities;
++    }
++}
