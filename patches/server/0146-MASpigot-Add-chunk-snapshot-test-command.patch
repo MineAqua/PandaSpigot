@@ -1,0 +1,192 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Sun, 2 Aug 2026 01:00:27 -0400
+Subject: [PATCH] MASpigot Add chunk snapshot test command
+
+Adds an operator-only /chunksnapshot command with per-player copy, paste, and clear actions. Snapshots include tile entities and can be pasted into another chunk for manual testing. Also clears destination tile entities when the copied snapshot contains none.
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index 20e2aff279cfaa8e42bd0ffa5c53f0e5e96deb04..d8245c6ae0309ff4bb2676a818a596db9923d118 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -3,6 +3,7 @@ package com.hpfxd.pandaspigot.config;
+ import com.google.common.base.Throwables;
+ import com.hpfxd.configurate.eoyaml.EOYamlConfigurationLoader;
+ import net.minecraft.server.World;
++import net.minecraft.server.MinecraftServer;
+ import org.bukkit.Bukkit;
+ import org.spigotmc.SpigotConfig;
+ import org.spongepowered.configurate.CommentedConfigurationNode;
+@@ -100,6 +101,13 @@ public class PandaSpigotConfig {
+         return config;
+     }
+ 
++    // MASpigot start - server commands
++    public static void registerCommands() {
++        MinecraftServer.getServer().server.getCommandMap().register(
++                "chunksnapshot", "MASpigot", new us.mineaqua.spigot.server.chunk.ChunkSnapshotCommand());
++    }
++    // MASpigot end
++
+     // MASpigot start - reduce step sound spam
+     private static com.google.common.cache.Cache<Short, Boolean> stepSoundsCache;
+ 
+diff --git a/src/main/java/net/minecraft/server/DedicatedServer.java b/src/main/java/net/minecraft/server/DedicatedServer.java
+index 0f4e8c767632430a4cda8905331e6cede4351566..af96143b057c40be78c270308dde53faa08254a3 100644
+--- a/src/main/java/net/minecraft/server/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/DedicatedServer.java
+@@ -210,6 +210,7 @@ public class DedicatedServer extends MinecraftServer implements IMinecraftServer
+             bindAddress = new java.net.InetSocketAddress(inetaddress, this.R());
+             }
+             com.hpfxd.pandaspigot.config.PandaSpigotConfig.init((File) options.valueOf("pandaspigot-settings"));
++            com.hpfxd.pandaspigot.config.PandaSpigotConfig.registerCommands(); // MASpigot
+             // PandaSpigot end
+             // PaperSpigot start
+             org.github.paperspigot.PaperSpigotConfig.init((File) options.valueOf("paper-settings"));
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
+index 5b1b6199f5cfc998cd6a2e07b9795b6b442e4a6c..e9a49b7067a85c18508eb06f69a9109a0fbb5d02 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftChunk.java
+@@ -378,7 +378,7 @@ public class CraftChunk implements Chunk {
+             }
+         }
+ 
+-        if (includeTileEntities && !snap.getTileEntities().isEmpty()) {
++        if (includeTileEntities) {
+             // close any inventories currently open into a tile entity being replaced
+             for (TileEntity tileEntity : handle.tileEntities.values()) {
+                 if (tileEntity instanceof IInventory) {
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index 2eac381a825ed0edabd12816432f6d2d655887ef..4d8c4058f370cfb3c090d7482dad70fc1493bd28 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -773,6 +773,7 @@ public final class CraftServer implements Server {
+         resetRecipes();
+         org.spigotmc.SpigotConfig.registerCommands(); // Spigot
+         org.github.paperspigot.PaperSpigotConfig.registerCommands(); // PaperSpigot
++        com.hpfxd.pandaspigot.config.PandaSpigotConfig.registerCommands(); // MASpigot
+ 
+         overrideAllCommandBlockCommands = commandsConfiguration.getStringList("command-block-overrides").contains("*");
+ 
+diff --git a/src/main/java/us/mineaqua/spigot/server/chunk/ChunkSnapshotCommand.java b/src/main/java/us/mineaqua/spigot/server/chunk/ChunkSnapshotCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..e54c2ce31d86c141223ba68b5e98f6c21704169d
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/server/chunk/ChunkSnapshotCommand.java
+@@ -0,0 +1,116 @@
++package us.mineaqua.spigot.server.chunk;
++
++import com.google.common.collect.ImmutableList;
++import org.apache.commons.lang.Validate;
++import org.bukkit.ChatColor;
++import org.bukkit.Chunk;
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandSender;
++import org.bukkit.entity.Player;
++import org.bukkit.util.StringUtil;
++import us.mineaqua.spigot.chunk.DummyChunkSnapshot;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.UUID;
++
++// MASpigot - test command for copying and pasting restorable chunk snapshots
++public final class ChunkSnapshotCommand extends Command {
++
++    private static final List<String> SUBCOMMANDS = ImmutableList.of("copy", "paste", "clear");
++
++    private final Map<UUID, Clipboard> clipboards = new HashMap<>();
++
++    public ChunkSnapshotCommand() {
++        super("chunksnapshot", "Copy and paste chunk snapshots for testing", "/chunksnapshot <copy|paste|clear>",
++                ImmutableList.of("chunksnap"));
++        setPermission("maspigot.command.chunksnapshot");
++    }
++
++    @Override
++    public boolean execute(CommandSender sender, String commandLabel, String[] args) {
++        if (!testPermission(sender)) {
++            return true;
++        }
++
++        if (!(sender instanceof Player)) {
++            sender.sendMessage(ChatColor.RED + "This command can only be used by a player.");
++            return true;
++        }
++
++        if (args.length != 1) {
++            sender.sendMessage(ChatColor.RED + "Usage: " + usageMessage);
++            return true;
++        }
++
++        Player player = (Player) sender;
++        UUID playerId = player.getUniqueId();
++
++        if (args[0].equalsIgnoreCase("copy")) {
++            Chunk chunk = player.getLocation().getChunk();
++            clipboards.put(playerId, new Clipboard(chunk.takeSnapshot(true), chunk.getWorld().getName(), chunk.getX(), chunk.getZ()));
++            player.sendMessage(ChatColor.GREEN + "Copied chunk " + formatChunk(chunk) + ChatColor.GREEN
++                    + " with tile entities.");
++            return true;
++        }
++
++        if (args[0].equalsIgnoreCase("paste")) {
++            Clipboard clipboard = clipboards.get(playerId);
++            if (clipboard == null) {
++                player.sendMessage(ChatColor.RED + "Copy a chunk first with /" + commandLabel + " copy.");
++                return true;
++            }
++
++            Chunk chunk = player.getLocation().getChunk();
++            chunk.restoreSnapshot(clipboard.snapshot, true);
++            player.sendMessage(ChatColor.GREEN + "Pasted chunk snapshot from " + ChatColor.YELLOW
++                    + clipboard.world + " [" + clipboard.x + ", " + clipboard.z + "]" + ChatColor.GREEN
++                    + " into " + formatChunk(chunk) + ChatColor.GREEN + ".");
++            return true;
++        }
++
++        if (args[0].equalsIgnoreCase("clear")) {
++            if (clipboards.remove(playerId) == null) {
++                player.sendMessage(ChatColor.YELLOW + "Your chunk snapshot clipboard is already empty.");
++            } else {
++                player.sendMessage(ChatColor.GREEN + "Cleared your chunk snapshot clipboard.");
++            }
++            return true;
++        }
++
++        sender.sendMessage(ChatColor.RED + "Usage: " + usageMessage);
++        return true;
++    }
++
++    @Override
++    public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
++        Validate.notNull(sender, "Sender cannot be null");
++        Validate.notNull(alias, "Alias cannot be null");
++        Validate.notNull(args, "Arguments cannot be null");
++
++        if (args.length == 1) {
++            return StringUtil.copyPartialMatches(args[0], SUBCOMMANDS, new ArrayList<>(SUBCOMMANDS.size()));
++        }
++        return ImmutableList.of();
++    }
++
++    private static String formatChunk(Chunk chunk) {
++        return ChatColor.YELLOW + chunk.getWorld().getName() + " [" + chunk.getX() + ", " + chunk.getZ() + "]";
++    }
++
++    private static final class Clipboard {
++        private final DummyChunkSnapshot snapshot;
++        private final String world;
++        private final int x;
++        private final int z;
++
++        private Clipboard(DummyChunkSnapshot snapshot, String world, int x, int z) {
++            this.snapshot = snapshot;
++            this.world = world;
++            this.x = x;
++            this.z = z;
++        }
++    }
++}
