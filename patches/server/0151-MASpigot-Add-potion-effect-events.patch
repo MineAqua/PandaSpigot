@@ -1,0 +1,471 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 03:16:21 -0400
+Subject: [PATCH] MASpigot Add potion effect events
+
+
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index 822910daf38a0ecd6c685afa985e301ba2feabec..a3ac468d92922056bc2bf4fb39791b1d991ab8fc 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -15,11 +15,17 @@ import java.util.ArrayList;
+ import com.google.common.base.Function;
+ import com.google.common.collect.Lists;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
++import org.bukkit.craftbukkit.potion.CraftPotionUtils;
+ import org.bukkit.entity.LivingEntity;
+ import org.bukkit.entity.Vehicle;
+ import org.bukkit.event.entity.EntityDamageEvent;
+ import org.bukkit.event.entity.EntityDamageEvent.DamageModifier;
+ import org.bukkit.event.entity.EntityRegainHealthEvent;
++import org.bukkit.event.entity.PotionEffectAddEvent;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
++import org.bukkit.event.entity.PotionEffectExpireEvent;
++import org.bukkit.event.entity.PotionEffectExtendEvent;
++import org.bukkit.event.entity.PotionEffectRemoveEvent;
+ import org.bukkit.event.vehicle.VehicleExitEvent;
+ // CraftBukkit end
+ 
+@@ -464,38 +470,34 @@ public abstract class EntityLiving extends Entity {
+         this.hurtTimestamp = nbttagcompound.getInt("HurtByTimestamp");
+     }
+ 
+-    // CraftBukkit start
+-    private boolean isTickingEffects = false;
+-    private List<Object> effectsToProcess = Lists.newArrayList();
+-    // CraftBukkit end
+-
+     protected void bi() {
+-        Iterator iterator = this.effects.keySet().iterator();
++        Iterator iterator = com.google.common.collect.ImmutableSet.copyOf(this.effects.keySet()).iterator(); // SportBukkit - copy to allow concurrent modification
+ 
+-        isTickingEffects = true; // CraftBukkit
+         while (iterator.hasNext()) {
+             Integer integer = (Integer) iterator.next();
++            if(!this.effects.keySet().contains(integer)) continue; // SportBukkit - skip if effect was removed during iteration
+             MobEffect mobeffect = (MobEffect) this.effects.get(integer);
+ 
+             if (!mobeffect.tick(this)) {
+                 if (!this.world.isClientSide) {
+-                    iterator.remove();
++                    // SportBukkit start - fire event
++                    PotionEffectExpireEvent event = new PotionEffectExpireEvent((LivingEntity) this.getBukkitEntity(),
++                            CraftPotionUtils.toBukkit(mobeffect));
++                    this.world.getServer().getPluginManager().callEvent(event);
++                    if(event.isCancelled()) {
++                        // Duration must be extended if event is cancelled
++                        CraftPotionUtils.extendDuration(mobeffect, event.getDuration());
++                        continue;
++                    }
++
++                    this.effects.remove(integer);
++                    // SportBukkit end
+                     this.b(mobeffect);
+                 }
+             } else if (mobeffect.getDuration() % 600 == 0) {
+                 this.a(mobeffect, false);
+             }
+         }
+-        // CraftBukkit start
+-        isTickingEffects = false;
+-        for (Object e : effectsToProcess) {
+-            if (e instanceof MobEffect) {
+-                addEffect((MobEffect) e);
+-            } else {
+-                removeEffect((Integer) e);
+-            }
+-        }
+-        // CraftBukkit end
+ 
+         if (this.updateEffects) {
+             if (!this.world.isClientSide) {
+@@ -552,15 +554,13 @@ public abstract class EntityLiving extends Entity {
+     }
+ 
+     public void removeAllEffects() {
+-        Iterator iterator = this.effects.keySet().iterator();
++        Iterator iterator = com.google.common.collect.ImmutableSet.copyOf(this.effects.keySet()).iterator(); // SportBukkit - copy to allow concurrent modification
+ 
+         while (iterator.hasNext()) {
+             Integer integer = (Integer) iterator.next();
+-            MobEffect mobeffect = (MobEffect) this.effects.get(integer);
+ 
+             if (!this.world.isClientSide) {
+-                iterator.remove();
+-                this.b(mobeffect);
++                this.removeEffect(integer);
+             }
+         }
+ 
+@@ -583,19 +583,30 @@ public abstract class EntityLiving extends Entity {
+         return (MobEffect) this.effects.get(Integer.valueOf(mobeffectlist.id));
+     }
+ 
+-    public void addEffect(MobEffect mobeffect) {
++    public void addEffect(MobEffect effect) {
++        addEffect(effect, EffectAddReason.UNKNOWN);
++    }
++
++    public void addEffect(MobEffect mobeffect, EffectAddReason reason) {
+         org.spigotmc.AsyncCatcher.catchOp( "effect add"); // Spigot
+-        // CraftBukkit start
+-        if (isTickingEffects) {
+-            effectsToProcess.add(mobeffect);
+-            return;
+-        }
+-        // CraftBukkit end
+         if (this.d(mobeffect)) {
+             if (this.effects.containsKey(Integer.valueOf(mobeffect.getEffectId()))) {
++                // SportBukkit start - fire event
++                PotionEffectExtendEvent event = new PotionEffectExtendEvent((LivingEntity) this.getBukkitEntity(),
++                        CraftPotionUtils.toBukkit(mobeffect), reason,
++                        CraftPotionUtils.toBukkit(this.effects.get(mobeffect.getEffectId())));
++                this.world.getServer().getPluginManager().callEvent(event);
++                if(event.isCancelled()) return;
++                // SportBukkit end
+                 ((MobEffect) this.effects.get(Integer.valueOf(mobeffect.getEffectId()))).a(mobeffect);
+                 this.a((MobEffect) this.effects.get(Integer.valueOf(mobeffect.getEffectId())), true);
+             } else {
++                // SportBukkit start - fire event
++                PotionEffectAddEvent event = new PotionEffectAddEvent((LivingEntity) this.getBukkitEntity(),
++                        CraftPotionUtils.toBukkit(mobeffect), reason);
++                this.world.getServer().getPluginManager().callEvent(event);
++                if(event.isCancelled()) return;
++                // SportBukkit end
+                 this.effects.put(Integer.valueOf(mobeffect.getEffectId()), mobeffect);
+                 this.a(mobeffect);
+             }
+@@ -620,15 +631,18 @@ public abstract class EntityLiving extends Entity {
+     }
+ 
+     public void removeEffect(int i) {
+-        // CraftBukkit start
+-        if (isTickingEffects) {
+-            effectsToProcess.add(i);
+-            return;
+-        }
+-        // CraftBukkit end
+         MobEffect mobeffect = (MobEffect) this.effects.remove(Integer.valueOf(i));
+ 
+         if (mobeffect != null) {
++            // SportBukkit start
++            PotionEffectRemoveEvent event = new PotionEffectRemoveEvent((LivingEntity) this.getBukkitEntity(),
++                    CraftPotionUtils.toBukkit(mobeffect));
++            this.world.getServer().getPluginManager().callEvent(event);
++            if(event.isCancelled()) {
++                this.effects.put(i, mobeffect);
++                return;
++            }
++            // SportBukkit end
+             this.b(mobeffect);
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityPotion.java b/src/main/java/net/minecraft/server/EntityPotion.java
+index 9a7375071328a337535ad67d251859b77e86c463..61c247908d9bf5e7cb653f3a14d4519bb7325897 100644
+--- a/src/main/java/net/minecraft/server/EntityPotion.java
++++ b/src/main/java/net/minecraft/server/EntityPotion.java
+@@ -8,6 +8,7 @@ import java.util.HashMap;
+ 
+ import org.bukkit.craftbukkit.entity.CraftLivingEntity;
+ import org.bukkit.entity.LivingEntity;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ // CraftBukkit end
+ 
+ public class EntityPotion extends EntityProjectile {
+@@ -122,7 +123,7 @@ public class EntityPotion extends EntityProjectile {
+                                     int j = (int) (d1 * (double) mobeffect.getDuration() + 0.5D);
+ 
+                                     if (j > 20) {
+-                                        entityliving.addEffect(new MobEffect(i, j, mobeffect.getAmplifier()));
++                                        entityliving.addEffect(new MobEffect(i, j, mobeffect.getAmplifier()), EffectAddReason.POTION_SPLASH);
+                                     }
+                                 }
+                             }
+diff --git a/src/main/java/net/minecraft/server/EntitySkeleton.java b/src/main/java/net/minecraft/server/EntitySkeleton.java
+index 46bff95d8bf73e34eb8e0a9b94fb9fa9e9cc5cfb..b284903c1004bf9cc26039a4c5e9beedf63d2f14 100644
+--- a/src/main/java/net/minecraft/server/EntitySkeleton.java
++++ b/src/main/java/net/minecraft/server/EntitySkeleton.java
+@@ -3,6 +3,7 @@ package net.minecraft.server;
+ import java.util.Calendar;
+ 
+ import org.bukkit.event.entity.EntityCombustEvent; // CraftBukkit
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ 
+ public class EntitySkeleton extends EntityMonster implements IRangedEntity {
+ 
+@@ -56,7 +57,7 @@ public class EntitySkeleton extends EntityMonster implements IRangedEntity {
+     public boolean r(Entity entity) {
+         if (super.r(entity)) {
+             if (this.getSkeletonType() == 1 && entity instanceof EntityLiving) {
+-                ((EntityLiving) entity).addEffect(new MobEffect(MobEffectList.WITHER.id, 200));
++                ((EntityLiving) entity).addEffect(new MobEffect(MobEffectList.WITHER.id, 200), EffectAddReason.WITHER_SKELETON);
+             }
+ 
+             return true;
+diff --git a/src/main/java/net/minecraft/server/EntitySpider.java b/src/main/java/net/minecraft/server/EntitySpider.java
+index 68a253c9698d2b239e400d7a9406c4430072cc33..e3ca4ae80292be7f9c1db1ed7db5b1346943acf1 100644
+--- a/src/main/java/net/minecraft/server/EntitySpider.java
++++ b/src/main/java/net/minecraft/server/EntitySpider.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.server;
+ 
+ import java.util.Random;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ 
+ public class EntitySpider extends EntityMonster {
+ 
+@@ -127,7 +128,7 @@ public class EntitySpider extends EntityMonster {
+             int i = ((EntitySpider.GroupDataSpider) object).a;
+ 
+             if (i > 0 && MobEffectList.byId[i] != null) {
+-                this.addEffect(new MobEffect(i, Integer.MAX_VALUE));
++                this.addEffect(new MobEffect(i, Integer.MAX_VALUE), EffectAddReason.SPIDER_POWERUP);
+             }
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityVillager.java b/src/main/java/net/minecraft/server/EntityVillager.java
+index f1c905aa0fb964bd728c63b851fa4800a77179ef..5afccd2e0d6ff2fd239971da93593f7f528563ba 100644
+--- a/src/main/java/net/minecraft/server/EntityVillager.java
++++ b/src/main/java/net/minecraft/server/EntityVillager.java
+@@ -3,6 +3,7 @@ package net.minecraft.server;
+ import java.util.Iterator;
+ import java.util.Random;
+ import org.bukkit.craftbukkit.entity.CraftVillager; // CraftBukkit
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ 
+ public class EntityVillager extends EntityAgeable implements IMerchant, NPC {
+ 
+@@ -119,7 +120,7 @@ public class EntityVillager extends EntityAgeable implements IMerchant, NPC {
+                     }
+                 }
+ 
+-                this.addEffect(new MobEffect(MobEffectList.REGENERATION.id, 200, 0));
++                this.addEffect(new MobEffect(MobEffectList.REGENERATION.id, 200, 0), EffectAddReason.VILLAGER_LEVELUP);
+             }
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityWitherSkull.java b/src/main/java/net/minecraft/server/EntityWitherSkull.java
+index f0e627bac5b336c285bb549e28a69923b8ed1904..c3785a18cfe416a5756bdc1be0fb7d882398eefc 100644
+--- a/src/main/java/net/minecraft/server/EntityWitherSkull.java
++++ b/src/main/java/net/minecraft/server/EntityWitherSkull.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.server;
+ 
+ import org.bukkit.event.entity.ExplosionPrimeEvent; // CraftBukkit
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ 
+ public class EntityWitherSkull extends EntityFireball {
+ 
+@@ -62,7 +63,7 @@ public class EntityWitherSkull extends EntityFireball {
+                     }
+ 
+                     if (b0 > 0) {
+-                        ((EntityLiving) movingobjectposition.entity).addEffect(new MobEffect(MobEffectList.WITHER.id, 20 * b0, 1));
++                        ((EntityLiving) movingobjectposition.entity).addEffect(new MobEffect(MobEffectList.WITHER.id, 20 * b0, 1), EffectAddReason.WITHER_SKULL);
+                     }
+                 }
+             }
+diff --git a/src/main/java/net/minecraft/server/EntityZombie.java b/src/main/java/net/minecraft/server/EntityZombie.java
+index 5165f6e66431079ae756a0c967ca8c9cae466a29..1b73aade90bdb40f576208abe4b64d3b2e1b5ab7 100644
+--- a/src/main/java/net/minecraft/server/EntityZombie.java
++++ b/src/main/java/net/minecraft/server/EntityZombie.java
+@@ -10,6 +10,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
+ import org.bukkit.event.entity.EntityCombustByEntityEvent;
+ import org.bukkit.event.entity.EntityCombustEvent;
+ import org.bukkit.event.entity.EntityTargetEvent;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ //CraftBukkit end
+ 
+ public class EntityZombie extends EntityMonster {
+@@ -464,7 +465,7 @@ public class EntityZombie extends EntityMonster {
+         this.bn = i;
+         this.getDataWatcher().watch(14, Byte.valueOf((byte) 1));
+         this.removeEffect(MobEffectList.WEAKNESS.id);
+-        this.addEffect(new MobEffect(MobEffectList.INCREASE_DAMAGE.id, i, Math.min(this.world.getDifficulty().a() - 1, 0)));
++        this.addEffect(new MobEffect(MobEffectList.INCREASE_DAMAGE.id, i, Math.min(this.world.getDifficulty().a() - 1, 0)), EffectAddReason.VILLAGER_CURE);
+         this.world.broadcastEntityEffect(this, (byte) 16);
+     }
+ 
+@@ -494,7 +495,7 @@ public class EntityZombie extends EntityMonster {
+         }
+ 
+         this.world.addEntity(entityvillager, CreatureSpawnEvent.SpawnReason.CURED); // CraftBukkit - add SpawnReason
+-        entityvillager.addEffect(new MobEffect(MobEffectList.CONFUSION.id, 200, 0));
++        entityvillager.addEffect(new MobEffect(MobEffectList.CONFUSION.id, 200, 0), EffectAddReason.VILLAGER_CURE);
+         this.world.a((EntityHuman) null, 1017, new BlockPosition((int) this.locX, (int) this.locY, (int) this.locZ), 0);
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/ItemGoldenApple.java b/src/main/java/net/minecraft/server/ItemGoldenApple.java
+index 032c1fc99f8e6215e5e1f9b4e3847fc5fe366df4..a286b86a3acf0e61414cb7c154c855b2e25241d8 100644
+--- a/src/main/java/net/minecraft/server/ItemGoldenApple.java
++++ b/src/main/java/net/minecraft/server/ItemGoldenApple.java
+@@ -1,5 +1,7 @@
+ package net.minecraft.server;
+ 
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
++
+ public class ItemGoldenApple extends ItemFood {
+ 
+     public ItemGoldenApple(int i, float f, boolean flag) {
+@@ -15,14 +17,14 @@ public class ItemGoldenApple extends ItemFood {
+     @Override
+     protected void c(ItemStack itemstack, World world, EntityHuman entityhuman) {
+         if (!world.isClientSide) {
+-            entityhuman.addEffect(new MobEffect(MobEffectList.ABSORBTION.id, 2400, 0));
++            entityhuman.addEffect(new MobEffect(MobEffectList.ABSORBTION.id, 2400, 0), EffectAddReason.GOLDEN_APPLE);
+         }
+ 
+         if (itemstack.getData() > 0) {
+             if (!world.isClientSide) {
+-                entityhuman.addEffect(new MobEffect(MobEffectList.REGENERATION.id, 600, 4));
+-                entityhuman.addEffect(new MobEffect(MobEffectList.RESISTANCE.id, 6000, 0));
+-                entityhuman.addEffect(new MobEffect(MobEffectList.FIRE_RESISTANCE.id, 6000, 0));
++                entityhuman.addEffect(new MobEffect(MobEffectList.REGENERATION.id, 600, 4), EffectAddReason.GOLDEN_APPLE);
++                entityhuman.addEffect(new MobEffect(MobEffectList.RESISTANCE.id, 6000, 0), EffectAddReason.GOLDEN_APPLE);
++                entityhuman.addEffect(new MobEffect(MobEffectList.FIRE_RESISTANCE.id, 6000, 0), EffectAddReason.GOLDEN_APPLE);
+             }
+         } else {
+             super.c(itemstack, world, entityhuman);
+diff --git a/src/main/java/net/minecraft/server/ItemPotion.java b/src/main/java/net/minecraft/server/ItemPotion.java
+index 7d6df1685928eac546bf07ce905c484888197bdf..f7ed1ac2fb6121009460f34545881d93a27f5f3d 100644
+--- a/src/main/java/net/minecraft/server/ItemPotion.java
++++ b/src/main/java/net/minecraft/server/ItemPotion.java
+@@ -5,6 +5,7 @@ import com.google.common.collect.Maps;
+ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.Map;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ 
+ public class ItemPotion extends Item {
+ 
+@@ -67,7 +68,7 @@ public class ItemPotion extends Item {
+ 
+             if (list != null) {
+                 for (MobEffect mobeffect : list) {
+-                    entityhuman.addEffect(new MobEffect(mobeffect));
++                    entityhuman.addEffect(new MobEffect(mobeffect), EffectAddReason.POTION_DRINK);
+                 }
+             }
+         }
+diff --git a/src/main/java/net/minecraft/server/TileEntityBeacon.java b/src/main/java/net/minecraft/server/TileEntityBeacon.java
+index f4717af7d1a430dab45c5c8c368fd26c4fd73cb2..164c52e30e403b2474f44616fa50356644b770a7 100644
+--- a/src/main/java/net/minecraft/server/TileEntityBeacon.java
++++ b/src/main/java/net/minecraft/server/TileEntityBeacon.java
+@@ -13,6 +13,7 @@ import org.bukkit.entity.HumanEntity;
+ // PaperSpigot start
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.entity.Player;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ import org.bukkit.potion.PotionEffect;
+ import org.bukkit.potion.PotionEffectType;
+ import org.github.paperspigot.event.block.BeaconEffectEvent;
+@@ -96,7 +97,7 @@ public class TileEntityBeacon extends TileEntityContainer implements IUpdatePlay
+                 if (CraftEventFactory.callEvent(event).isCancelled()) continue;
+ 
+                 PotionEffect effect = event.getEffect();
+-                entityhuman.addEffect(new MobEffect(effect.getType().getId(), effect.getDuration(), effect.getAmplifier(), effect.isAmbient(), effect.hasParticles()));
++                entityhuman.addEffect(new MobEffect(effect.getType().getId(), effect.getDuration(), effect.getAmplifier(), effect.isAmbient(), effect.hasParticles()), EffectAddReason.BEACON);
+                 // PaperSpigot end
+             }
+ 
+@@ -111,7 +112,7 @@ public class TileEntityBeacon extends TileEntityContainer implements IUpdatePlay
+                     if (CraftEventFactory.callEvent(event).isCancelled()) continue;
+ 
+                     PotionEffect effect = event.getEffect();
+-                    entityhuman.addEffect(new MobEffect(effect.getType().getId(), effect.getDuration(), effect.getAmplifier(), effect.isAmbient(), effect.hasParticles()));
++                    entityhuman.addEffect(new MobEffect(effect.getType().getId(), effect.getDuration(), effect.getAmplifier(), effect.isAmbient(), effect.hasParticles()), EffectAddReason.BEACON);
+                     // PaperSpigot end
+                 }
+             }
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java
+index 3e3a04808196e722fd1dcdae638bfcf45a79f4d9..f432e234f5de295f1905773251874c92ab516148 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftLivingEntity.java
+@@ -54,6 +54,7 @@ import org.bukkit.entity.Snowball;
+ import org.bukkit.entity.ThrownExpBottle;
+ import org.bukkit.entity.ThrownPotion;
+ import org.bukkit.entity.WitherSkull;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ import org.bukkit.event.player.PlayerTeleportEvent;
+ import org.bukkit.inventory.EntityEquipment;
+ import org.bukkit.inventory.ItemStack;
+@@ -292,24 +293,36 @@ public class CraftLivingEntity extends CraftEntity implements LivingEntity {
+     }
+ 
+     public boolean addPotionEffect(PotionEffect effect) {
+-        return addPotionEffect(effect, false);
++        return addPotionEffect(effect, EffectAddReason.CUSTOM);
++    }
++
++    public boolean addPotionEffect(PotionEffect effect, EffectAddReason reason) {
++        return addPotionEffect(effect, false, reason);
+     }
+ 
+     public boolean addPotionEffect(PotionEffect effect, boolean force) {
++        return addPotionEffect(effect, force, EffectAddReason.CUSTOM);
++    }
++
++    public boolean addPotionEffect(PotionEffect effect, boolean force, EffectAddReason reason) {
+         if (hasPotionEffect(effect.getType())) {
+             if (!force) {
+                 return false;
+             }
+             removePotionEffect(effect.getType());
+         }
+-        getHandle().addEffect(new MobEffect(effect.getType().getId(), effect.getDuration(), effect.getAmplifier(), effect.isAmbient(), effect.hasParticles()));
++        getHandle().addEffect(new MobEffect(effect.getType().getId(), effect.getDuration(), effect.getAmplifier(), effect.isAmbient(), effect.hasParticles()), reason);
+         return true;
+     }
+ 
+     public boolean addPotionEffects(Collection<PotionEffect> effects) {
++        return addPotionEffects(effects, EffectAddReason.CUSTOM);
++    }
++
++    public boolean addPotionEffects(Collection<PotionEffect> effects, EffectAddReason reason) {
+         boolean success = true;
+         for (PotionEffect effect : effects) {
+-            success &= addPotionEffect(effect);
++            success &= addPotionEffect(effect, reason);
+         }
+         return success;
+     }
+diff --git a/src/main/java/org/bukkit/craftbukkit/potion/CraftPotionUtils.java b/src/main/java/org/bukkit/craftbukkit/potion/CraftPotionUtils.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0303c265a83fda300c62205474ebe8c8b70bb29b
+--- /dev/null
++++ b/src/main/java/org/bukkit/craftbukkit/potion/CraftPotionUtils.java
+@@ -0,0 +1,34 @@
++
++package org.bukkit.craftbukkit.potion;
++
++import net.minecraft.server.MobEffect;
++import org.bukkit.potion.PotionEffect;
++import org.bukkit.potion.PotionEffectType;
++
++public class CraftPotionUtils {
++    private CraftPotionUtils() {}
++
++    public static PotionEffect toBukkit(MobEffect effect) {
++        return new PotionEffect(PotionEffectType.getById(effect.getEffectId()),
++                effect.getDuration(),
++                effect.getAmplifier(),
++                effect.isAmbient(),
++                effect.isShowParticles());
++    }
++
++    public static MobEffect toNMS(PotionEffect effect) {
++        return new MobEffect(effect.getType().getId(),
++                effect.getDuration(),
++                effect.getAmplifier(),
++                effect.isAmbient(),
++                effect.hasParticles());
++    }
++
++    public static MobEffect cloneWithDuration(MobEffect effect, int duration) {
++        return new MobEffect(effect.getEffectId(), duration, effect.getAmplifier(), effect.isAmbient(), effect.isShowParticles());
++    }
++
++    public static void extendDuration(MobEffect effect, int duration) {
++        effect.a(cloneWithDuration(effect, duration));
++    }
++}

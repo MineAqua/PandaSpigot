@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 03:16:23 -0400
+Subject: [PATCH] MASpigot Expose EntityTypes class to EntityType mapping
+
+
+diff --git a/src/main/java/net/minecraft/server/EntityTypes.java b/src/main/java/net/minecraft/server/EntityTypes.java
+index 7d1d3a4f371a2b8b923b542b3390e2d4f77c4fe8..e42dc391d758f71b787f918593250cd4e48a2e63 100644
+--- a/src/main/java/net/minecraft/server/EntityTypes.java
++++ b/src/main/java/net/minecraft/server/EntityTypes.java
+@@ -11,6 +11,10 @@ import org.apache.logging.log4j.Logger;
+ 
+ public class EntityTypes {
+ 
++    // MASpigot start - expose class to EntityType mapping
++    public static Map<Class<? extends Entity>, org.bukkit.entity.EntityType> clsToTypeMap = new java.util.HashMap<>();
++    // MASpigot end
++
+     private static final Logger b = LogManager.getLogger();
+     private static final Map<String, Class<? extends Entity>> c = Maps.newHashMap();
+     private static final Map<Class<? extends Entity>, String> d = Maps.newHashMap();
+@@ -34,6 +38,7 @@ public class EntityTypes {
+             EntityTypes.e.put(i, oclass);
+             EntityTypes.f.put(oclass, i);
+             EntityTypes.g.put(s, i);
++            clsToTypeMap.put(oclass, org.bukkit.entity.EntityType.fromName(s)); // MASpigot
+         }
+     }
+ 

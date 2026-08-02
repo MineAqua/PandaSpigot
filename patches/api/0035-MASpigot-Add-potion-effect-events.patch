@@ -1,0 +1,382 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 03:16:12 -0400
+Subject: [PATCH] MASpigot Add potion effect events
+
+
+diff --git a/src/main/java/org/bukkit/command/defaults/EffectCommand.java b/src/main/java/org/bukkit/command/defaults/EffectCommand.java
+index de63bbe1d83bd5c0fdd7862d6ac5b050c0cd88c1..66e514870fab7c6ffdcf0d8966133785965f4c32 100644
+--- a/src/main/java/org/bukkit/command/defaults/EffectCommand.java
++++ b/src/main/java/org/bukkit/command/defaults/EffectCommand.java
+@@ -6,6 +6,7 @@ import java.util.List;
+ import org.bukkit.ChatColor;
+ import org.bukkit.command.CommandSender;
+ import org.bukkit.entity.Player;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ import org.bukkit.potion.PotionEffect;
+ import org.bukkit.potion.PotionEffectType;
+ import org.bukkit.util.StringUtil;
+@@ -100,7 +101,7 @@ public class EffectCommand extends VanillaCommand {
+         } else {
+             final PotionEffect applyEffect = new PotionEffect(effect, duration, amplification);
+ 
+-            player.addPotionEffect(applyEffect, true);
++            player.addPotionEffect(applyEffect, true, EffectAddReason.COMMAND);
+             broadcastCommandMessage(sender, String.format("Given %s (ID %d) * %d to %s for %d seconds", effect.getName(), effect.getId(), amplification, args[0], duration_temp));
+         }
+ 
+diff --git a/src/main/java/org/bukkit/entity/LivingEntity.java b/src/main/java/org/bukkit/entity/LivingEntity.java
+index 48e2508941299ce55f672979ff85a2969fc1c64b..b2480efa54032be10ec62f998121569fc5eb2d55 100644
+--- a/src/main/java/org/bukkit/entity/LivingEntity.java
++++ b/src/main/java/org/bukkit/entity/LivingEntity.java
+@@ -8,6 +8,7 @@ import java.util.Set;
+ import org.bukkit.Location;
+ import org.bukkit.Material;
+ import org.bukkit.block.Block;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ import org.bukkit.inventory.EntityEquipment;
+ import org.bukkit.potion.PotionEffect;
+ import org.bukkit.potion.PotionEffectType;
+@@ -293,6 +294,41 @@ public interface LivingEntity extends Entity, Damageable, ProjectileSource {
+      */
+     public boolean addPotionEffects(Collection<PotionEffect> effects);
+ 
++    /**
++     * Adds the given {@link PotionEffect} to the living entity.
++     * <p>
++     * Only one potion effect can be present for a given {@link
++     * PotionEffectType}.
++     *
++     * @param effect PotionEffect to be added
++     * @param reason reason the effects are being added
++     * @return whether the effect could be added
++     */
++    public boolean addPotionEffect(PotionEffect effect, EffectAddReason reason);
++
++    /**
++     * Adds the given {@link PotionEffect} to the living entity.
++     * <p>
++     * Only one potion effect can be present for a given {@link
++     * PotionEffectType}.
++     *
++     * @param effect PotionEffect to be added
++     * @param force whether conflicting effects should be removed
++     * @param reason reason the effects are being added
++     * @return whether the effect could be added
++     */
++    public boolean addPotionEffect(PotionEffect effect, boolean force, EffectAddReason reason);
++
++    /**
++     * Attempts to add all of the given {@link PotionEffect} to the living
++     * entity.
++     *
++     * @param effects the effects to add
++     * @param reason reason the effects are being added
++     * @return whether all of the effects could be added
++     */
++    public boolean addPotionEffects(Collection<PotionEffect> effects, EffectAddReason reason);
++
+     /**
+      * Returns whether the living entity already has an existing effect of
+      * the given {@link PotionEffectType} applied to it.
+diff --git a/src/main/java/org/bukkit/event/entity/PotionEffectAddEvent.java b/src/main/java/org/bukkit/event/entity/PotionEffectAddEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c9d77a3214d3883243172dd64acad6941e57e2d
+--- /dev/null
++++ b/src/main/java/org/bukkit/event/entity/PotionEffectAddEvent.java
+@@ -0,0 +1,89 @@
++package org.bukkit.event.entity;
++
++import org.bukkit.entity.LivingEntity;
++import org.bukkit.event.Cancellable;
++import org.bukkit.event.HandlerList;
++import org.bukkit.potion.PotionEffect;
++
++/**
++ * Called when a potion effect is applied to an entity, or an existing effect is extended or upgraded
++ */
++public class PotionEffectAddEvent extends PotionEffectEvent implements Cancellable {
++
++    private boolean cancelled;
++    private final EffectAddReason reason;
++
++    public PotionEffectAddEvent(LivingEntity what, PotionEffect effect, EffectAddReason reason) {
++        super(what, effect);
++        this.reason = reason;
++    }
++
++    @Override
++    public boolean isCancelled() {
++        return cancelled;
++    }
++
++    @Override
++    public void setCancelled(boolean cancel) {
++        this.cancelled = cancel;
++    }
++
++    public EffectAddReason getReason() {
++        return reason;
++    }
++
++    private static final HandlerList handlers = new HandlerList();
++    @Override public HandlerList getHandlers() { return handlers; }
++    public static HandlerList getHandlerList() { return handlers; }
++
++    public enum EffectAddReason {
++        /**
++         * Added using the /effect command
++         */
++        COMMAND,
++        /**
++         * Added by eating a golden apple
++         */
++        GOLDEN_APPLE,
++        /**
++         * Added by being near a beacon
++         */
++        BEACON,
++        /**
++         * Added by being hit with a wither skull
++         */
++        WITHER_SKULL,
++        /**
++         * Added by being hit by a wither skeleton
++         */
++        WITHER_SKELETON,
++        /**
++         * Added to villagers when they are cured
++         */
++        VILLAGER_CURE,
++        /**
++         * Added to villagers when they unlock a new set of trades
++         */
++        VILLAGER_LEVELUP,
++        /**
++         * Added to spiders on higher difficulty
++         */
++        SPIDER_POWERUP,
++        /**
++         * Added when a potion is splashed
++         */
++        POTION_SPLASH,
++        /**
++         * Added when a potion is consumed
++         */
++        POTION_DRINK,
++        /**
++         * Added by a plugin
++         */
++        CUSTOM,
++        /**
++         * Added by a part of the vanilla code not covered in the above cases
++         */
++        UNKNOWN
++    }
++}
+diff --git a/src/main/java/org/bukkit/event/entity/PotionEffectEvent.java b/src/main/java/org/bukkit/event/entity/PotionEffectEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..b0571a62798b58865c948ac6a644beb549fd075d
+--- /dev/null
++++ b/src/main/java/org/bukkit/event/entity/PotionEffectEvent.java
+@@ -0,0 +1,23 @@
++package org.bukkit.event.entity;
++
++import org.bukkit.entity.LivingEntity;
++import org.bukkit.potion.PotionEffect;
++
++public abstract class PotionEffectEvent extends EntityEvent {
++
++    private final PotionEffect effect;
++
++    public PotionEffectEvent(LivingEntity what, PotionEffect effect) {
++        super(what);
++        this.effect = effect;
++    }
++
++    @Override
++    public LivingEntity getEntity() {
++        return (LivingEntity) super.getEntity();
++    }
++
++    public PotionEffect getEffect() {
++        return effect;
++    }
++}
+diff --git a/src/main/java/org/bukkit/event/entity/PotionEffectExpireEvent.java b/src/main/java/org/bukkit/event/entity/PotionEffectExpireEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0fc2840585327f954e7132ea3525817c1bb8cefe
+--- /dev/null
++++ b/src/main/java/org/bukkit/event/entity/PotionEffectExpireEvent.java
+@@ -0,0 +1,45 @@
++package org.bukkit.event.entity;
++
++import org.bukkit.entity.LivingEntity;
++import org.bukkit.potion.PotionEffect;
++
++/**
++ * Called when a potion effect on an entity runs out. Cancelling the event extends
++ * the effect with a practically infinite duration. The new duration can also be set
++ * explicitly by calling {@link #setDuration}.
++ *
++ * Handlers of {@link PotionEffectRemoveEvent} will also receive this event.
++ */
++public class PotionEffectExpireEvent extends PotionEffectRemoveEvent {
++
++    private int duration = 0;
++
++    public PotionEffectExpireEvent(LivingEntity entity, PotionEffect effect) {
++        super(entity, effect);
++    }
++
++    /**
++     * Get the new duration for the potion effect. This is initially 0.
++     */
++    public int getDuration() {
++        return duration;
++    }
++
++    /**
++     * Set a new duration for the potion effect. Passing 0 to this method un-cancels
++     * the event, and passing anything above 0 cancels it.
++     */
++    public void setDuration(int duration) {
++        this.duration = Math.max(0, duration);
++    }
++
++    @Override
++    public boolean isCancelled() {
++        return duration > 0;
++    }
++
++    @Override
++    public void setCancelled(boolean cancel) {
++        this.duration = cancel ? Integer.MAX_VALUE : 0;
++    }
++}
+diff --git a/src/main/java/org/bukkit/event/entity/PotionEffectExtendEvent.java b/src/main/java/org/bukkit/event/entity/PotionEffectExtendEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..83d587b68df23576f752e2f827b8b59fec8b08b7
+--- /dev/null
++++ b/src/main/java/org/bukkit/event/entity/PotionEffectExtendEvent.java
+@@ -0,0 +1,27 @@
++package org.bukkit.event.entity;
++
++import org.bukkit.entity.LivingEntity;
++import org.bukkit.potion.PotionEffect;
++
++/**
++ * Called when an entity's active potion effect is extended or upgraded.
++ *
++ * Handlers of {@link PotionEffectAddEvent} will also receive this event.
++ */
++public class PotionEffectExtendEvent extends PotionEffectAddEvent {
++
++    private final PotionEffect oldEffect;
++
++    public PotionEffectExtendEvent(LivingEntity what, PotionEffect effect,
++        EffectAddReason reason, PotionEffect oldEffect) {
++        super(what, effect, reason);
++        this.oldEffect = oldEffect;
++    }
++
++    /**
++     * Get the state of the potion effect prior to the change
++     */
++    public PotionEffect getOldEffect() {
++        return oldEffect;
++    }
++}
+diff --git a/src/main/java/org/bukkit/event/entity/PotionEffectRemoveEvent.java b/src/main/java/org/bukkit/event/entity/PotionEffectRemoveEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c95af16b8dd57455aaedb6954ecdb44726dbb833
+--- /dev/null
++++ b/src/main/java/org/bukkit/event/entity/PotionEffectRemoveEvent.java
+@@ -0,0 +1,33 @@
++package org.bukkit.event.entity;
++
++import org.bukkit.entity.LivingEntity;
++import org.bukkit.event.Cancellable;
++import org.bukkit.event.HandlerList;
++import org.bukkit.potion.PotionEffect;
++
++/**
++ * Called when a potion effect is removed from an entity for whatever reason
++ */
++public class PotionEffectRemoveEvent extends PotionEffectEvent implements Cancellable {
++
++    private boolean cancelled;
++
++    public PotionEffectRemoveEvent(LivingEntity entity, PotionEffect effect) {
++        super(entity, effect);
++    }
++
++    @Override
++    public boolean isCancelled() {
++        return cancelled;
++    }
++
++    @Override
++    public void setCancelled(boolean cancel) {
++        this.cancelled = cancel;
++    }
++
++    private static final HandlerList handlers = new HandlerList();
++    @Override public HandlerList getHandlers() { return handlers; }
++    public static HandlerList getHandlerList() { return handlers; }
++
++}
+diff --git a/src/main/java/org/bukkit/potion/Potion.java b/src/main/java/org/bukkit/potion/Potion.java
+index 36f2f1adb5e7e40ab822bd20e719f729d7d7f5ec..3bdae10ed1e80894bfda218af3be8be3a2784abd 100644
+--- a/src/main/java/org/bukkit/potion/Potion.java
++++ b/src/main/java/org/bukkit/potion/Potion.java
+@@ -5,6 +5,7 @@ import java.util.Collection;
+ import org.apache.commons.lang.Validate;
+ import org.bukkit.Material;
+ import org.bukkit.entity.LivingEntity;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ import org.bukkit.inventory.ItemStack;
+ 
+ import com.google.common.collect.ImmutableList;
+@@ -169,12 +170,12 @@ public class Potion {
+      * Applies the effects that would be applied by this potion to the given
+      * {@link LivingEntity}.
+      *
+-     * @see LivingEntity#addPotionEffects(Collection)
++     * @see LivingEntity#addPotionEffects(Collection, EffectAddReason)
+      * @param to The entity to apply the effects to
+      */
+     public void apply(LivingEntity to) {
+         Validate.notNull(to, "entity cannot be null");
+-        to.addPotionEffects(getEffects());
++        to.addPotionEffects(getEffects(), EffectAddReason.CUSTOM);
+     }
+ 
+     @Override
+diff --git a/src/main/java/org/bukkit/potion/PotionEffect.java b/src/main/java/org/bukkit/potion/PotionEffect.java
+index 75bfa27a321122340f50e1fec57e59f192fc2101..3cc219c800943fa794aa267e1840769b4c3f1952 100644
+--- a/src/main/java/org/bukkit/potion/PotionEffect.java
++++ b/src/main/java/org/bukkit/potion/PotionEffect.java
+@@ -7,6 +7,7 @@ import org.apache.commons.lang.Validate;
+ import org.bukkit.configuration.serialization.ConfigurationSerializable;
+ import org.bukkit.configuration.serialization.SerializableAs;
+ import org.bukkit.entity.LivingEntity;
++import org.bukkit.event.entity.PotionEffectAddEvent.EffectAddReason;
+ 
+ import com.google.common.collect.ImmutableMap;
+ 
+@@ -120,12 +121,12 @@ public class PotionEffect implements ConfigurationSerializable {
+      * Attempts to add the effect represented by this object to the given
+      * {@link LivingEntity}.
+      *
+-     * @see LivingEntity#addPotionEffect(PotionEffect)
++     * @see LivingEntity#addPotionEffect(PotionEffect, EffectAddReason)
+      * @param entity The entity to add this effect to
+      * @return Whether the effect could be added
+      */
+     public boolean apply(LivingEntity entity) {
+-        return entity.addPotionEffect(this);
++        return entity.addPotionEffect(this, EffectAddReason.CUSTOM);
+     }
+ 
+     @Override

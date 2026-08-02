@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 03:16:18 -0400
+Subject: [PATCH] MASpigot Add com.destroystokyo.paper.Title compatibility
+ bridge
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 0cae3398f85789a3c7e4d4e32d8c9b853af46700..770c277190539325dfdc92a09c4765c62243fa4a 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -289,6 +289,18 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     public void hideTitle() {
+         getHandle().playerConnection.sendPacket(new PacketPlayOutTitle(PacketPlayOutTitle.EnumTitleAction.CLEAR, (BaseComponent[]) null, 0, 0, 0));
+     }
++
++    @Override
++    public void sendTitle(com.destroystokyo.paper.Title title) {
++        Preconditions.checkNotNull(title, "Title is null");
++        sendTitle(title.asPaperSpigotTitle());
++    }
++
++    @Override
++    public void updateTitle(com.destroystokyo.paper.Title title) {
++        Preconditions.checkNotNull(title, "Title is null");
++        updateTitle(title.asPaperSpigotTitle());
++    }
+     // Paper end
+ 
+     // PandaSpigot start - Adventure
