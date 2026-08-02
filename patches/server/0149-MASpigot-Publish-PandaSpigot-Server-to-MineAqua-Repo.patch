@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 02:57:03 -0400
+Subject: [PATCH] MASpigot Publish PandaSpigot-Server to MineAqua Reposilite
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index e9df20a48afde91bc88c653be4db02a17d4c475b..ee4ecaf4068c81d5c9aab64451334f16d617c828 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -1,6 +1,7 @@
+ plugins {
+     id("pandaspigot.conventions")
+     id("com.gradleup.shadow") version "9.4.1"
++    `maven-publish`
+ }
+ 
+ val minecraftVersion = "1_8_R3"
+@@ -157,3 +158,56 @@ tasks {
+         dependsOn(named("remap"))
+     }
+ }
++
++publishing {
++    publications {
++        create<MavenPublication>("mavenJava") {
++            artifact(tasks.named<RemapTask>("remap").flatMap { it.outJarFile })
++
++            pom {
++                url.set("https://github.com/hpfxd/PandaSpigot")
++                description.set(project.description)
++                name.set(project.name)
++                // if this is a CI build, set version as the run id
++                System.getenv("GITHUB_RUN_NUMBER").let { if (it != null) version = it }
++
++                developers {
++                    developer {
++                        id.set("hpfxd")
++                        name.set("Nate")
++                        email.set("me@hpfxd.com")
++                    }
++                }
++
++                scm {
++                    connection.set("scm:git:git://github.com/hpfxd/PandaSpigot.git")
++                    developerConnection.set("scm:git:git://github.com/hpfxd/PandaSpigot.git")
++                    url.set("https://github.com/hpfxd/PandaSpigot")
++                }
++
++                licenses {
++                    license {
++                        name.set("GPL-v3.0")
++                        url.set("https://www.gnu.org/licenses/gpl-3.0.txt")
++                    }
++                }
++            }
++        }
++    }
++
++    (System.getenv("MINEAQUA_REPO_USERNAME") ?: findProperty("mineaquaRepositoryUsername")).let { repoUsername ->
++        if (repoUsername == null) return@let // don't declare repository if username not declared
++
++        repositories {
++            maven {
++                name = "mineaqua-repo"
++                url = uri("https://repo.mineaqua.net/private")
++
++                credentials {
++                    username = repoUsername as String
++                    password = System.getenv("MINEAQUA_REPO_PASSWORD") ?: findProperty("mineaquaRepositoryPassword") as String
++                }
++            }
++        }
++    }
++}
