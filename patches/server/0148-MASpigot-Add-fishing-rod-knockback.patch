@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 01:03:54 -0400
+Subject: [PATCH] MASpigot Add fishing rod knockback
+
+When a thrown fishing hook strikes a player, applies a custom velocity computed from the target's KnockbackProfile (rodHorizontal/rodVertical) instead of relying on the vanilla damage-triggered knockback path.
+
+diff --git a/src/main/java/net/minecraft/server/EntityFishingHook.java b/src/main/java/net/minecraft/server/EntityFishingHook.java
+index 6eca198f9f026c82b8b31d446c3953dabdc956cf..96849bb0c055a1f3ea1b7c23b874a6eb3e0b1b2c 100644
+--- a/src/main/java/net/minecraft/server/EntityFishingHook.java
++++ b/src/main/java/net/minecraft/server/EntityFishingHook.java
+@@ -207,9 +207,31 @@ public class EntityFishingHook extends Entity {
+             if (movingobjectposition != null) {
+                 org.bukkit.craftbukkit.event.CraftEventFactory.callProjectileHitEvent(this, movingobjectposition); // CraftBukkit - Call event // PandaSpigot - movingobjectposition
+                 if (movingobjectposition.entity != null) {
+-                    if (movingobjectposition.entity.damageEntity(DamageSource.projectile(this, this.owner), 0.0F)) {
++                    // MASpigot start - rod knockback via knockback profile
++                    if (owner != null && movingobjectposition.entity instanceof EntityPlayer) {
++                        EntityPlayer hit = (EntityPlayer) movingobjectposition.entity;
++
++                        if (hit.damageEntity(DamageSource.projectile(this, this.owner), 0.0F)) {
++                            this.hooked = hit;
++
++                            us.mineaqua.spigot.knockback.KnockbackProfile profile = hit.getKnockbackProfile();
++                            double rodHorizontal = profile.getValue("rodHorizontal");
++
++                            org.bukkit.util.Vector vector = new org.bukkit.util.Vector(motX, motY, motZ).normalize();
++                            double velX = (vector.getX() / 1.6) * rodHorizontal;
++                            double velY = 0.36 * (double) profile.<Double>getValue("rodVertical");
++                            double velZ = (vector.getZ() / 1.6) * rodHorizontal;
++
++                            hit.playerConnection.sendPacket(new PacketPlayOutEntityVelocity(hit.getId(), velX, velY, velZ));
++                            hit.velocityChanged = false;
++                            hit.motX = velX;
++                            hit.motY = velY;
++                            hit.motZ = velZ;
++                        }
++                    } else if (movingobjectposition.entity.damageEntity(DamageSource.projectile(this, this.owner), 0.0F)) {
+                         this.hooked = movingobjectposition.entity;
+                     }
++                    // MASpigot end
+                 } else {
+                     this.as = true;
+                 }

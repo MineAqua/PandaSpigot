@@ -1,0 +1,808 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 01:03:43 -0400
+Subject: [PATCH] MASpigot Restore knockback profile system
+
+Replaces PandaSpigot's own world-scoped knockback config
+(PandaSpigotWorldConfig#knockback, now removed) with MASpigot's
+per-player KnockbackProfile system, restoring the exact behaviour
+MineAqua's players are used to.
+
+- EntityHuman: knockbackProfile field + getter/setter, and a full
+  rewrite of the melee-attack knockback block in attack() that
+  recomputes velocity from the target player's KnockbackProfile
+  (onePointOne mode, ground/sprint/enchant multipliers, combo mode)
+  instead of vanilla/PandaSpigotConfig constants. The
+  PrePlayerAttackEntityEvent wrapper PandaSpigot already had around
+  attack() is left untouched.
+- EntityPlayer: setSprinting() override tracks shouldDealSprintKnockback
+  so a fresh sprint-attack gets the profile's sprint knockback bonus.
+- EntityLiving: damageEntity()'s hit-delay (noDamageTicks) now reads
+  the attacker's/victim's KnockbackProfile#hitDelay for EntityHuman
+  targets; the base knockback-on-hit method a(Entity,float,double,double)
+  reverts to flat vanilla constants, since it now only applies to
+  non-player-vs-player knockback sources (mobs, explosions, etc) -
+  player-vs-player melee knockback is fully recomputed in attack().
+- CraftPlayer: delegates getKnockbackProfile()/setKnockbackProfile()
+  to the handle.
+- New us.mineaqua.spigot.server.knockback.KnockbackManager: loads/saves
+  named profiles as YAML files under a knockback/ directory, each
+  profile is a full independent set of options (hitDelay, onePointOne,
+  horizontal/vertical + friction/ground/sprint multipliers, comboMode,
+  rod values, etc), with a "default" profile created automatically.
+- New us.mineaqua.spigot.server.knockback.KnockbackCommand ("/knockback"):
+  create/delete/edit/use/reset/save/save-all sub-commands, registered
+  through PaperSpigotConfig's existing (previously unused) command map.
+  Unlike the original MASpigot command, "reset" and "save-all" are
+  checked before the args.length < 2 guard, since they only take one
+  argument - the original placed that check first, so those two
+  sub-commands could never actually be invoked.
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+index d18af288085fe6bab3f378d6269b3d4b97314aba..e5d2a92884ea98e39d1a2ccca77d49e890cbbe4a 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
+@@ -37,18 +37,8 @@ public class PandaSpigotWorldConfig {
+             "By default, this is true (vanilla behaviour)")
+     public boolean randomArrowTrajectory = true;
+     
+-    @Comment("These options control velocity players receive when damaged.")
+-    public KnockbackConfig knockback;
+-    
+-    @ConfigSerializable
+-    public static class KnockbackConfig {
+-        public double friction = 2.0;
+-        public double horizontal = 0.4;
+-        public double vertical = 0.4;
+-        public double verticalLimit = 0.4000000059604645;
+-        public double extraHorizontal = 0.5;
+-        public double extraVertical = 0.1;
+-    }
++    // MASpigot - knockback is now controlled entirely by per-player KnockbackProfile
++    // profiles (see the knockback/ directory), replacing this world-scoped config.
+ 
+     @Comment("When enabled, armor durability damage taken by players is scaled by\n" +
+             "'armorDamageMultiplier' instead of vanilla armor damage.\n" +
+diff --git a/src/main/java/net/minecraft/server/EntityHuman.java b/src/main/java/net/minecraft/server/EntityHuman.java
+index 524ff60ada7392ec1fd803661f957c19c50b2c2e..eed4e4618f9b0526880ba8aec96e5437c6082b7e 100644
+--- a/src/main/java/net/minecraft/server/EntityHuman.java
++++ b/src/main/java/net/minecraft/server/EntityHuman.java
+@@ -22,12 +22,32 @@ import org.bukkit.event.player.PlayerVelocityEvent;
+ import org.bukkit.util.Vector;
+ // CraftBukkit end
+ 
++// MASpigot start - knockback profiles
++import us.mineaqua.spigot.knockback.KnockbackProfile;
++import us.mineaqua.spigot.server.knockback.KnockbackManager;
++// MASpigot end
++
+ public abstract class EntityHuman extends EntityLiving {
+ 
+     public PlayerInventory inventory = new PlayerInventory(this);
+     private InventoryEnderChest enderChest = new InventoryEnderChest();
+     public Container defaultContainer;
+     public Container activeContainer;
++
++    // MASpigot start - knockback profiles
++    private KnockbackProfile knockbackProfile = KnockbackManager.INSTANCE.defaultKnockback();
++
++    public boolean shouldDealSprintKnockback = false;
++    public int ticksDown;
++
++    public KnockbackProfile getKnockbackProfile() {
++        return knockbackProfile;
++    }
++
++    public void setKnockbackProfile(KnockbackProfile profile) {
++        knockbackProfile = profile == null ? KnockbackManager.INSTANCE.defaultKnockback() : profile;
++    }
++    // MASpigot end
+     protected FoodMetaData foodData = new FoodMetaData(this); // CraftBukkit - add "this" to constructor
+     protected int bm;
+     public float bn;
+@@ -1004,49 +1024,145 @@ public abstract class EntityHuman extends EntityLiving {
+                         // CraftBukkit end
+                     }
+ 
+-                    double d0 = entity.motX;
+-                    double d1 = entity.motY;
+-                    double d2 = entity.motZ;
+                     boolean flag2 = entity.damageEntity(DamageSource.playerAttack(this), f);
+ 
+                     if (flag2) {
+-                        if (i > 0) {
+-                            // PandaSpigot start - Configurable knockback
+-                            com.hpfxd.pandaspigot.config.PandaSpigotWorldConfig.KnockbackConfig knockbackConfig = entity.world.pandaSpigotConfig.knockback;
+-                            entity.g(
+-                                    -MathHelper.sin(this.yaw * 3.1415927F / 180.0F) * (float) i * knockbackConfig.extraHorizontal,
+-                                    knockbackConfig.extraVertical,
+-                                    MathHelper.cos(this.yaw * 3.1415927F / 180.0F) * (float) i * knockbackConfig.extraHorizontal);
+-                            // PandaSpigot end
+-                            this.motX *= 0.6D;
+-                            this.motZ *= 0.6D;
+-                            this.setSprinting(false);
+-                        }
+-
++                        // MASpigot start - knockback profile system (replaces vanilla/PandaSpigot knockback for player targets)
+                         if (entity instanceof EntityPlayer && entity.velocityChanged) {
+-                            // CraftBukkit start - Add Velocity Event
+-                            boolean cancelled = false;
+-                            Player player = (Player) entity.getBukkitEntity();
+-                            org.bukkit.util.Vector velocity = new Vector( d0, d1, d2 );
++                            EntityPlayer targetPlayer = (EntityPlayer) entity;
++                            KnockbackProfile profile = targetPlayer.getKnockbackProfile();
+ 
+-                            PlayerVelocityEvent event = new PlayerVelocityEvent(player, velocity.clone());
+-                            world.getServer().getPluginManager().callEvent(event);
++                            double velX, velY, velZ;
++
++                            double vertical = profile.getValue("vertical");
++                            double verticalSprint = profile.getValue("verticalSprint");
++
++                            double horizontal = profile.getValue("horizontal");
++                            double horizontalSprint = profile.getValue("horizontalSprint");
++
++                            double attackerSlowdown = profile.getValue("attackerSlowdown");
++
++                            boolean comboMode = profile.getValue("comboMode");
++
++                            boolean cancelSprint = profile.getValue("cancelSprint");
++
++                            if ((boolean) profile.getValue("onePointOne")) {
++                                Vector vector = new Vector(entity.locX - locX, 0.0, entity.locZ - locZ).normalize();
++
++                                velX = vector.getX();
++                                velY = vertical;
++                                velZ = vector.getZ();
++
++                                double yOff = entity.locY - locY;
++
++                                if (comboMode) {
++                                    if (yOff > 2.5) {
++                                        ticksDown = MinecraftServer.currentTick;
++                                    }
++                                    if (yOff > 2.5 || MinecraftServer.currentTick - ticksDown < 10) {
++                                        velY = -0.05;
++                                    }
++                                }
++
++                                velX *= horizontal;
++                                velZ *= horizontal;
++
++                                if (shouldDealSprintKnockback) {
++                                    velX *= horizontalSprint;
++                                    velY *= verticalSprint;
++                                    velZ *= horizontalSprint;
++                                }
++
++                                if (isSprinting()) {
++                                    motX *= attackerSlowdown;
++                                    motZ *= attackerSlowdown;
+ 
+-                            if (event.isCancelled()) {
+-                                cancelled = true;
+-                            } else if (!velocity.equals(event.getVelocity())) {
+-                                player.setVelocity(event.getVelocity());
++                                    shouldDealSprintKnockback = false;
++
++                                    if (cancelSprint) {
++                                        setSprinting(false);
++                                    }
++                                }
++                            } else {
++                                if ((boolean) profile.getValue("inheritHorizontal")) {
++                                    double horizontalFriction = profile.getValue("horizontalFriction");
++                                    velX = (targetPlayer.motX * horizontalFriction) + Math.sin(Math.toRadians(yaw)) * -1.0;
++                                    velZ = (targetPlayer.motZ * horizontalFriction) + Math.cos(Math.toRadians(yaw));
++                                } else {
++                                    velX = Math.sin(Math.toRadians(getHeadRotation())) * -1.0;
++                                    velZ = Math.cos(Math.toRadians(getHeadRotation()));
++                                }
++
++                                velX *= horizontal;
++                                velZ *= horizontal;
++
++                                if ((boolean) profile.getValue("inheritVertical")) {
++                                    velY = (targetPlayer.motY * (double) profile.getValue("verticalFriction")) + vertical;
++                                } else {
++                                    velY = vertical;
++                                }
++
++                                if (targetPlayer.onGround) {
++                                    double groundHorizontal = profile.getValue("groundHorizontal");
++                                    velX *= groundHorizontal;
++                                    velY *= (double) profile.getValue("groundVertical");
++                                    velZ *= groundHorizontal;
++                                }
++
++                                int level = EnchantmentManager.getEnchantmentLevel(Enchantment.KNOCKBACK.id, inventory.getItemInHand()) + 1;
++                                if (level > 0) {
++                                    velX *= level;
++                                    velZ *= level;
++                                }
++
++                                if (shouldDealSprintKnockback) {
++                                    velX *= horizontalSprint;
++                                    velY *= verticalSprint;
++                                    velZ *= horizontalSprint;
++
++                                    shouldDealSprintKnockback = false;
++                                }
++
++                                if (isSprinting()) {
++                                    motX *= attackerSlowdown;
++                                    motZ *= attackerSlowdown;
++
++                                    shouldDealSprintKnockback = false;
++                                    if (cancelSprint) {
++                                        setSprinting(false);
++                                    }
++                                }
++
++                                if (comboMode) {
++                                    double height = profile.getValue("comboHeight");
++
++                                    double yOff = entity.locY - locY;
++                                    if (yOff > height) {
++                                        ticksDown = MinecraftServer.currentTick;
++                                    }
++
++                                    if (yOff > height || MinecraftServer.currentTick - ticksDown < (int) profile.getValue("comboTicks")) {
++                                        velY = profile.getValue("comboVelocity");
++                                    }
++                                }
++
++                                double yOff = entity.locY - locY;
++                                if (yOff > (double) profile.getValue("verticalLimit")) {
++                                    velY = 0.0;
++                                }
+                             }
+ 
+-                            if (!cancelled) {
+-                                ( (EntityPlayer) entity ).playerConnection.sendPacket( new PacketPlayOutEntityVelocity( entity ) );
+-                                entity.velocityChanged = false;
+-                                entity.motX = d0;
+-                                entity.motY = d1;
+-                                entity.motZ = d2;
++                            PlayerVelocityEvent event = new PlayerVelocityEvent(targetPlayer.getBukkitEntity(), new Vector(velX, velY, velZ));
++                            world.getServer().getPluginManager().callEvent(event);
++                            if (!event.isCancelled()) {
++                                targetPlayer.playerConnection.sendPacket(new PacketPlayOutEntityVelocity(targetPlayer.getId(), velX, velY, velZ));
+                             }
+-                            // CraftBukkit end
++                            targetPlayer.velocityChanged = false;
++                            targetPlayer.motX = velX;
++                            targetPlayer.motY = velY;
++                            targetPlayer.motZ = velZ;
+                         }
++                        // MASpigot end
+ 
+                         if (flag) {
+                             this.b(entity);
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index b9e752f5d4814fac19dc47760331d3706c05c85c..822910daf38a0ecd6c685afa985e301ba2feabec 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -729,7 +729,11 @@ public abstract class EntityLiving extends Entity {
+                 this.aB = 1.5F;
+                 boolean flag = true;
+ 
+-                if ((float) this.noDamageTicks > (float) this.maxNoDamageTicks / 2.0F) {
++                // MASpigot start - per-profile hit delay for players
++                int maxNoDamageTicks = this instanceof EntityHuman ? ((EntityHuman) this).getKnockbackProfile().<Integer>getValue("hitDelay") : this.maxNoDamageTicks;
++                // MASpigot end
++
++                if ((float) this.noDamageTicks > (float) maxNoDamageTicks / 2.0F) {
+                     if (f <= this.lastDamage) {
+                         this.forceExplosionKnockback = true; // CraftBukkit - SPIGOT-949 - for vanilla consistency, cooldown does not prevent explosion knockback
+                         return false;
+@@ -749,7 +753,7 @@ public abstract class EntityLiving extends Entity {
+                         return false;
+                     }
+                     this.lastDamage = f;
+-                    this.noDamageTicks = this.maxNoDamageTicks;
++                    this.noDamageTicks = maxNoDamageTicks; // MASpigot - per-profile hit delay
+                     // CraftBukkit end
+                     this.hurtTicks = this.av = 10;
+                 }
+@@ -897,24 +901,21 @@ public abstract class EntityLiving extends Entity {
+     public void a(Entity entity, float f, double d0, double d1) {
+         if (this.random.nextDouble() >= this.getAttributeInstance(GenericAttributes.c).getValue()) {
+             this.ai = true;
+-            // PandaSpigot start - Configurable knockback
+-            com.hpfxd.pandaspigot.config.PandaSpigotWorldConfig.KnockbackConfig knockbackConfig = entity.world.pandaSpigotConfig.knockback;
+-            double magnitude = MathHelper.sqrt(d0 * d0 + d1 * d1);
+-    
+-            double friction = knockbackConfig.friction;
+-            this.motX /= friction;
+-            this.motY /= friction;
+-            this.motZ /= friction;
+-    
+-            this.motX -= d0 / magnitude * knockbackConfig.horizontal;
+-            this.motY += knockbackConfig.vertical;
+-            this.motZ -= d1 / magnitude * knockbackConfig.horizontal;
+-    
+-            if (this.motY > knockbackConfig.verticalLimit) {
+-                this.motY = knockbackConfig.verticalLimit;
++            // MASpigot start - revert to vanilla knockback for non-melee-attack sources (mobs, explosions, etc);
++            // player-vs-player melee knockback is fully recomputed by KnockbackProfile in EntityHuman#attack()
++            float f1 = MathHelper.sqrt(d0 * d0 + d1 * d1);
++            float f2 = 0.4F;
++
++            this.motX /= 2.0D;
++            this.motY /= 2.0D;
++            this.motZ /= 2.0D;
++            this.motX -= d0 / (double) f1 * (double) f2;
++            this.motY += (double) f2;
++            this.motZ -= d1 / (double) f1 * (double) f2;
++            if (this.motY > 0.4000000059604645D) {
++                this.motY = 0.4000000059604645D;
+             }
+-            // PandaSpigot end
+-
++            // MASpigot end
+         }
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityPlayer.java b/src/main/java/net/minecraft/server/EntityPlayer.java
+index 9201e4111cd160c414f52d2b88fa28e2ac82ba69..21aebdf5559814c3e4213f5bd69ae6e303f15ef5 100644
+--- a/src/main/java/net/minecraft/server/EntityPlayer.java
++++ b/src/main/java/net/minecraft/server/EntityPlayer.java
+@@ -973,6 +973,21 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+     }
+     // MASpigot end
+ 
++    // MASpigot start - knockback profiles, sprint knockback bonus
++    @Override
++    public void setSprinting(boolean sprinting) {
++        if (sprinting) {
++            if (!isSprinting()) {
++                shouldDealSprintKnockback = true;
++            }
++        } else {
++            shouldDealSprintKnockback = false;
++        }
++
++        super.setSprinting(sprinting);
++    }
++    // MASpigot end
++
+     public void copyTo(EntityHuman entityhuman, boolean flag) {
+         super.copyTo(entityhuman, flag);
+         this.lastSentExp = -1;
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 354c4388108e06757dd964d9d19f90cf88ed9f60..0cae3398f85789a3c7e4d4e32d8c9b853af46700 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -1770,6 +1770,18 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         }
+     };
+ 
++    // MASpigot start - per-player knockback profiles
++    @Override
++    public us.mineaqua.spigot.knockback.KnockbackProfile getKnockbackProfile() {
++        return getHandle().getKnockbackProfile();
++    }
++
++    @Override
++    public void setKnockbackProfile(us.mineaqua.spigot.knockback.KnockbackProfile profile) {
++        getHandle().setKnockbackProfile(profile);
++    }
++    // MASpigot end
++
+     public Player.Spigot spigot()
+     {
+         return spigot;
+diff --git a/src/main/java/org/github/paperspigot/PaperSpigotConfig.java b/src/main/java/org/github/paperspigot/PaperSpigotConfig.java
+index b118ecd457df670f34623800264435d46a2b4c71..bd5fb3096f8113a5c691eeec4abcf13fce723dc6 100644
+--- a/src/main/java/org/github/paperspigot/PaperSpigotConfig.java
++++ b/src/main/java/org/github/paperspigot/PaperSpigotConfig.java
+@@ -56,6 +56,7 @@ public class PaperSpigotConfig
+         config.options().copyDefaults( true );
+ 
+         commands = new HashMap<String, Command>();
++        commands.put("knockback", new us.mineaqua.spigot.server.knockback.KnockbackCommand()); // MASpigot - knockback profile command
+ 
+         version = getInt( "config-version", 9 );
+         set( "config-version", 9 );
+diff --git a/src/main/java/us/mineaqua/spigot/server/knockback/KnockbackCommand.java b/src/main/java/us/mineaqua/spigot/server/knockback/KnockbackCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..6ebdc539f0336b6b44ceae37131b76255fc26240
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/server/knockback/KnockbackCommand.java
+@@ -0,0 +1,228 @@
++package us.mineaqua.spigot.server.knockback;
++
++import com.google.common.base.Strings;
++import com.google.common.collect.ImmutableList;
++import org.apache.commons.lang.Validate;
++import org.bukkit.ChatColor;
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandSender;
++import org.bukkit.entity.Player;
++import org.bukkit.util.StringUtil;
++import us.mineaqua.spigot.knockback.KnockbackProfile;
++import us.mineaqua.spigot.option.Option;
++
++import java.io.IOException;
++import java.util.ArrayList;
++import java.util.Collection;
++import java.util.List;
++
++public class KnockbackCommand extends Command {
++
++    private static final String STRAIGHT_CHAT_LINE = ChatColor.STRIKETHROUGH + Strings.repeat("-", 55);
++
++    private static final List<String> SUBCOMMANDS = ImmutableList.of("create", "delete", "edit", "use", "reset", "save", "save-all");
++    private static final KnockbackManager knockbackManager = KnockbackManager.INSTANCE;
++
++    public KnockbackCommand() {
++        super("knockback");
++
++        this.description = "Modify MASpigot's knockback properties";
++        this.usageMessage = "/knockback <create|delete|edit|use|reset|save|save-all> <profile>";
++
++        this.setPermission("maspigot.command.knockback");
++    }
++
++    @Override
++    public boolean execute(CommandSender sender, String commandLabel, String[] args) {
++        if (!testPermission(sender)) {
++            return true;
++        }
++
++        if (args.length < 1) {
++            sender.sendMessage(ChatColor.RED + "Usage: " + usageMessage);
++            return true;
++        }
++
++        if (args[0].equalsIgnoreCase("save-all")) {
++            try {
++                knockbackManager.save();
++            } catch (IOException e) {
++                sender.sendMessage(ChatColor.RED + "There was an error while saving existing knockback profiles.");
++                throw new RuntimeException(e);
++            }
++
++            sender.sendMessage(ChatColor.GREEN + "Saved all existing knockback profiles");
++            return true;
++        }
++
++        if (args[0].equalsIgnoreCase("reset")) {
++            if (!(sender instanceof Player)) {
++                sender.sendMessage(ChatColor.RED + "You must be a player to execute this sub-command.");
++                return true;
++            }
++
++            Player self = (Player) sender;
++            self.setKnockbackProfile(knockbackManager.defaultKnockback());
++            self.sendMessage(ChatColor.GREEN + "You are now using the " + ChatColor.WHITE + "default" + ChatColor.GREEN + " knockback profile.");
++            return true;
++        }
++
++        if (args.length < 2) {
++            sender.sendMessage(ChatColor.RED + "Usage: " + usageMessage);
++            return true;
++        }
++
++        final String name = args[1];
++        KnockbackProfile profile = knockbackManager.getProfile(name);
++
++        switch (args[0].toLowerCase()) {
++            case "create":
++                if (profile != null) {
++                    sender.sendMessage(ChatColor.RED + "Knockback profile named '" + name + "' already exists.");
++                    return true;
++                }
++
++                knockbackManager.createKnockbackProfile(name);
++                sender.sendMessage(ChatColor.GREEN + "Created knockback profile '" + ChatColor.GOLD + name + ChatColor.GREEN + "'.");
++                break;
++            case "delete":
++                if (profile == null) {
++                    sender.sendMessage(ChatColor.RED + "Knockback profile named '" + name + "' does not exists.");
++                    return true;
++                }
++
++                knockbackManager.delete(profile);
++                sender.sendMessage(ChatColor.GREEN + "Deleted knockback profile '" + ChatColor.GOLD + name + ChatColor.GREEN + "'.");
++                break;
++            case "edit":
++                if (profile == null) {
++                    sender.sendMessage(ChatColor.RED + "Knockback profile named '" + name + "' does not exists.");
++                    return true;
++                }
++
++                if (args.length < 3) {
++                    sendProfileValues(sender, profile);
++                    return true;
++                }
++
++                Option option = profile.getOption(args[2]);
++                if (option == null) {
++                    sender.sendMessage(ChatColor.RED + "Knockback option named '" + args[2] + "' does not exists.");
++                    return true;
++                }
++
++                if (args.length < 4) {
++                    sender.sendMessage(ChatColor.GRAY + "Current value for " + ChatColor.GOLD + option.getName() + ChatColor.GRAY + " is " + ChatColor.WHITE + option.getValue() + ChatColor.GRAY + ".");
++                    return true;
++                }
++
++                String input = args[3];
++                Object value = option.getValue();
++
++                try {
++                    if (value instanceof Integer) {
++                        value = Integer.parseInt(input);
++                    } else if (value instanceof Double) {
++                        value = Double.parseDouble(input);
++                    } else if (value instanceof Boolean) {
++                        value = Boolean.parseBoolean(input);
++                    }
++                } catch (Exception ex) {
++                    sender.sendMessage(ChatColor.RED + "Provided input can not be parsed for specified knockback option.");
++                    return true;
++                }
++
++                option.setValue(value);
++                sender.sendMessage(ChatColor.GREEN + "Set the " + ChatColor.GRAY + option.getName() + ChatColor.GREEN + " value of "
++                        + ChatColor.GOLD + profile.getName() + ChatColor.GREEN + " to " + ChatColor.WHITE + value + ChatColor.GOLD + '.');
++                break;
++            case "use":
++                if (!(sender instanceof Player)) {
++                    sender.sendMessage(ChatColor.RED + "You must be a player to execute this sub-command.");
++                    return true;
++                }
++
++                if (profile == null) {
++                    sender.sendMessage(ChatColor.RED + "Knockback profile named '" + name + "' does not exists.");
++                    return true;
++                }
++
++                Player player = (Player) sender;
++                player.setKnockbackProfile(profile);
++                player.sendMessage(ChatColor.GREEN + "You are now using the " + ChatColor.WHITE + profile.getName() + ChatColor.GREEN + " knockback profile.");
++                break;
++            case "save":
++                if (profile == null) {
++                    sender.sendMessage(ChatColor.RED + "Knockback profile named '" + name + "' does not exists.");
++                    return true;
++                }
++
++                try {
++                    knockbackManager.save(profile);
++                } catch (IOException e) {
++                    sender.sendMessage(ChatColor.RED + "There was an error while saving knockback profile named '" + name + "'.");
++                    throw new RuntimeException(e);
++                }
++
++                sender.sendMessage(ChatColor.GREEN + "Knockback profile named '" + ChatColor.WHITE + name + ChatColor.GREEN + "' saved.");
++                break;
++            default:
++                sender.sendMessage(ChatColor.RED + "Usage: " + usageMessage);
++                break;
++        }
++        return true;
++    }
++
++    @Override
++    public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
++        Validate.notNull(sender, "Sender cannot be null");
++        Validate.notNull(args, "Arguments cannot be null");
++        Validate.notNull(alias, "Alias cannot be null");
++
++        if (args.length == 1) {
++            return StringUtil.copyPartialMatches(args[0], SUBCOMMANDS, new ArrayList<>(SUBCOMMANDS.size()));
++        } else if (args.length == 2) {
++            Collection<String> profiles = knockbackManager.getProfileNames();
++            return StringUtil.copyPartialMatches(args[1], profiles, new ArrayList<>(profiles.size()));
++        } else if (args.length == 3) {
++            Collection<String> defaultOptions = knockbackManager.defaultKnockback().getOptionNames();
++            return StringUtil.copyPartialMatches(args[2], defaultOptions, new ArrayList<>(defaultOptions.size()));
++        }
++        return ImmutableList.of();
++    }
++
++    private void sendProfileValues(CommandSender sender, KnockbackProfile profile) {
++        sender.sendMessage(ChatColor.GRAY + STRAIGHT_CHAT_LINE);
++        sender.sendMessage(ChatColor.GOLD.toString() + ChatColor.BOLD + " " + profile.getName() + " Configuration");
++        sender.sendMessage("");
++        sender.sendMessage(ChatColor.GRAY + "  Hit Delay: " + ChatColor.WHITE + profile.getValue("hitDelay"));
++        sender.sendMessage("");
++        sender.sendMessage(ChatColor.GRAY + "  1.1 Knockback: " + ((boolean) profile.getValue("onePointOne") ? ChatColor.GREEN + "Yes" : ChatColor.RED + "No"));
++        sender.sendMessage(ChatColor.GRAY + "  Cancel Sprint: " + ((boolean) profile.getValue("cancelSprint") ? ChatColor.GREEN + "Yes" : ChatColor.RED + "No"));
++        sender.sendMessage("");
++        sender.sendMessage(ChatColor.GRAY + "  Vertical: " + ChatColor.WHITE + profile.getValue("vertical"));
++        sender.sendMessage(ChatColor.GRAY + "  Vertical Limit: " + ChatColor.WHITE + profile.getValue("verticalLimit"));
++        sender.sendMessage(ChatColor.GRAY + "  Horizontal: " + ChatColor.WHITE + profile.getValue("horizontal"));
++        sender.sendMessage(ChatColor.GRAY + "  Attacker Slowdown: " + ChatColor.WHITE + profile.getValue("attackerSlowdown"));
++        sender.sendMessage("");
++        sender.sendMessage(ChatColor.GOLD + "  Friction & Multipliers " + ChatColor.WHITE + "[Vertical, Horizontal]");
++        sender.sendMessage(ChatColor.GRAY + "   Friction: "
++                + ((boolean) profile.getValue("inheritVertical") ? ChatColor.GREEN : ChatColor.RED) + profile.getValue("verticalFriction")
++                + ChatColor.GRAY + " ❘ "
++                + ((boolean) profile.getValue("inheritHorizontal") ? ChatColor.GREEN : ChatColor.RED) + profile.getValue("horizontalFriction"));
++        sender.sendMessage(ChatColor.GRAY + "   Ground Multiplier: " + ChatColor.WHITE + profile.getValue("groundVertical") + ChatColor.GRAY + " ❘ " + ChatColor.WHITE + profile.getValue("groundHorizontal"));
++        sender.sendMessage(ChatColor.GRAY + "   Sprint Multiplier: " + ChatColor.WHITE + profile.getValue("verticalSprint") + ChatColor.GRAY + " ❘ " + ChatColor.WHITE + profile.getValue("horizontalSprint"));
++        sender.sendMessage("");
++        sender.sendMessage(ChatColor.GOLD + "  Rod Values");
++        sender.sendMessage(ChatColor.GRAY + "   Vertical: " + ChatColor.WHITE + profile.getValue("rodVertical"));
++        sender.sendMessage(ChatColor.GRAY + "   Horizontal: " + ChatColor.WHITE + profile.getValue("rodHorizontal"));
++        if ((boolean) profile.getValue("comboMode")) {
++            sender.sendMessage("");
++            sender.sendMessage(ChatColor.GOLD + "  Combo Values");
++            sender.sendMessage(ChatColor.GRAY + "   Ticks: " + ChatColor.WHITE + profile.getValue("comboTicks"));
++            sender.sendMessage(ChatColor.GRAY + "   Height: " + ChatColor.WHITE + profile.getValue("comboHeight"));
++            sender.sendMessage(ChatColor.GRAY + "   Velocity: " + ChatColor.WHITE + profile.getValue("comboVelocity"));
++        }
++        sender.sendMessage(ChatColor.GRAY + STRAIGHT_CHAT_LINE);
++    }
++}
+diff --git a/src/main/java/us/mineaqua/spigot/server/knockback/KnockbackManager.java b/src/main/java/us/mineaqua/spigot/server/knockback/KnockbackManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f7a52e240ba1075a1defe7193a200f2b70e57c7c
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/server/knockback/KnockbackManager.java
+@@ -0,0 +1,161 @@
++package us.mineaqua.spigot.server.knockback;
++
++import org.bukkit.configuration.InvalidConfigurationException;
++import org.bukkit.configuration.file.YamlConfiguration;
++import us.mineaqua.spigot.knockback.KnockbackProfile;
++import us.mineaqua.spigot.option.Option;
++
++import java.io.File;
++import java.io.IOException;
++import java.util.Collection;
++import java.util.HashMap;
++import java.util.LinkedHashMap;
++import java.util.Map;
++
++public enum KnockbackManager {
++
++    INSTANCE;
++
++    private static final String KNOCKBACK_DIRECTORY_NAME = "knockback";
++    private static final String DEFAULT_KNOCKBACK_NAME = "default";
++
++    private final Map<String, KnockbackProfile> profiles = new HashMap<>();
++
++    KnockbackManager() {
++        File knockback = new File(KNOCKBACK_DIRECTORY_NAME);
++        if (!knockback.exists()) {
++            knockback.mkdir();
++        }
++
++        File[] files = knockback.listFiles();
++        if (files != null) {
++            for (File file : files) {
++                if (!file.getName().endsWith(".yml")) {
++                    continue;
++                }
++
++                final YamlConfiguration config = new YamlConfiguration();
++                try {
++                    config.load(file);
++                } catch (IOException | InvalidConfigurationException e) {
++                    throw new RuntimeException(e);
++                }
++
++                final String name = file.getName().replace(".yml", "");
++
++                Map<String, Option> options = defaults();
++                for (Option option : options.values()) {
++                    final Object value = config.get(option.getName());
++                    if (value == null) {
++                        config.set(option.getName(), option.getValue());
++                    } else {
++                        option.setValue(value);
++                    }
++                }
++
++                try {
++                    config.save(file);
++                } catch (IOException e) {
++                    throw new RuntimeException(e);
++                }
++
++                profiles.put(name, new KnockbackProfile(name, options));
++            }
++        }
++
++        // store default knockback if it wasn't previously loaded.
++        if (!profiles.containsKey(DEFAULT_KNOCKBACK_NAME)) {
++            KnockbackProfile profile = new KnockbackProfile(DEFAULT_KNOCKBACK_NAME, defaults());
++
++            profiles.put(profile.getName(), profile);
++
++            try {
++                save(profile);
++            } catch (IOException e) {
++                throw new RuntimeException(e);
++            }
++        }
++    }
++
++    public boolean createKnockbackProfile(String name) {
++        if (profiles.containsKey(name)) {
++            return false;
++        }
++
++        final KnockbackProfile profile = new KnockbackProfile(name, defaults());
++        this.profiles.put(name, profile);
++        return true;
++    }
++
++    public KnockbackProfile getProfile(String name) {
++        return profiles.get(name);
++    }
++
++    public Collection<String> getProfileNames() {
++        return profiles.keySet();
++    }
++
++    public void save(KnockbackProfile profile) throws IOException {
++        File file = new File(KNOCKBACK_DIRECTORY_NAME + File.separator + profile.getName() + ".yml");
++        if (!file.exists()) {
++            file.getParentFile().mkdirs();
++            file.createNewFile();
++        }
++
++        YamlConfiguration config = new YamlConfiguration();
++        for (Option option : profile.getOptions()) {
++            config.set(option.getName(), option.getValue());
++        }
++
++        config.save(file);
++    }
++
++    public void save() throws IOException {
++        for (KnockbackProfile profile : profiles.values()) {
++            save(profile);
++        }
++    }
++
++    public void delete(KnockbackProfile profile) {
++        this.profiles.remove(profile.getName());
++
++        File file = new File(KNOCKBACK_DIRECTORY_NAME + File.separator + profile.getName() + ".yml");
++        if (file.exists()) {
++            file.delete();
++        }
++    }
++
++    public KnockbackProfile defaultKnockback() {
++        return profiles.get(DEFAULT_KNOCKBACK_NAME);
++    }
++
++    private static Map<String, Option> defaults() {
++        Map<String, Option> options = new LinkedHashMap<>();
++        register(options, Option.simple("hitDelay", 20));
++        register(options, Option.simple("onePointOne", false));
++        register(options, Option.simple("horizontal", 0.33));
++        register(options, Option.simple("inheritHorizontal", true));
++        register(options, Option.simple("horizontalFriction", 1.0));
++        register(options, Option.simple("groundHorizontal", 1.1));
++        register(options, Option.simple("horizontalSprint", 1.2));
++        register(options, Option.simple("attackerSlowdown", 0.6));
++        register(options, Option.simple("vertical", 0.33));
++        register(options, Option.simple("inheritVertical", false));
++        register(options, Option.simple("verticalFriction", 1.0));
++        register(options, Option.simple("groundVertical", 1.0));
++        register(options, Option.simple("verticalSprint", 1.0));
++        register(options, Option.simple("verticalLimit", 1.2));
++        register(options, Option.simple("cancelSprint", true));
++        register(options, Option.simple("comboMode", false));
++        register(options, Option.simple("comboHeight", 2.5));
++        register(options, Option.simple("comboTicks", 10));
++        register(options, Option.simple("comboVelocity", -0.05));
++        register(options, Option.simple("rodHorizontal", 0.9));
++        register(options, Option.simple("rodVertical", 1.0));
++        return options;
++    }
++
++    private static void register(Map<String, Option> map, Option option) {
++        map.put(option.getName(), option);
++    }
++}

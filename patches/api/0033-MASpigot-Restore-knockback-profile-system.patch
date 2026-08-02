@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sun, 2 Aug 2026 01:04:10 -0400
+Subject: [PATCH] MASpigot Restore knockback profile system
+
+Adds the API surface for MASpigot's per-player knockback profiles: a generic Option/SimpleOption key-value pair used by KnockbackProfile, the KnockbackProfile itself (name + named options), and Player#getKnockbackProfile()/setKnockbackProfile(). Counterpart to the matching PandaSpigot-Server patch.
+
+diff --git a/src/main/java/org/bukkit/entity/Player.java b/src/main/java/org/bukkit/entity/Player.java
+index 9ef233b8d928d1c53e203e34943dee3d72268b5f..c889b1c05ad542baf6e7f2041f55d8f89dd25aa8 100644
+--- a/src/main/java/org/bukkit/entity/Player.java
++++ b/src/main/java/org/bukkit/entity/Player.java
+@@ -1423,6 +1423,22 @@ public interface Player extends HumanEntity, Conversable, CommandSender, Offline
+         }
+     }
+ 
++    // MASpigot start - per-player knockback profiles
++    /**
++     * Gets this player's current knockback profile.
++     *
++     * @return the knockback profile currently assigned to this player
++     */
++    us.mineaqua.spigot.knockback.KnockbackProfile getKnockbackProfile();
++
++    /**
++     * Sets this player's knockback profile.
++     *
++     * @param profile the knockback profile to assign, or null to reset to the default profile
++     */
++    void setKnockbackProfile(us.mineaqua.spigot.knockback.KnockbackProfile profile);
++    // MASpigot end
++
+     Spigot spigot();
+     // Spigot end
+ 
+diff --git a/src/main/java/us/mineaqua/spigot/knockback/KnockbackProfile.java b/src/main/java/us/mineaqua/spigot/knockback/KnockbackProfile.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..b64a9faa51a5018cb9f5ebf739a8f02a4a87f2e9
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/knockback/KnockbackProfile.java
+@@ -0,0 +1,41 @@
++package us.mineaqua.spigot.knockback;
++
++import com.google.common.collect.ImmutableList;
++import us.mineaqua.spigot.option.Option;
++
++import java.util.Map;
++import java.util.Objects;
++
++public final class KnockbackProfile {
++
++    private final String name;
++    private final Map<String, Option> options;
++
++    public KnockbackProfile(
++            String name,
++            Map<String, Option> options
++    ) {
++        this.name = name;
++        this.options = options;
++    }
++
++    public String getName() {
++        return name;
++    }
++
++    public ImmutableList<Option> getOptions() {
++        return ImmutableList.copyOf(options.values());
++    }
++
++    public ImmutableList<String> getOptionNames() {
++        return ImmutableList.copyOf(options.keySet());
++    }
++
++    public Option getOption(String key) {
++        return options.get(key);
++    }
++
++    public <T> T getValue(String key) {
++        return Objects.requireNonNull(getOption(key), "Provided option name was not found.").getValue();
++    }
++}
+diff --git a/src/main/java/us/mineaqua/spigot/option/Option.java b/src/main/java/us/mineaqua/spigot/option/Option.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce7f1306494074adf6a68e5c58f27129b156f2af
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/option/Option.java
+@@ -0,0 +1,39 @@
++package us.mineaqua.spigot.option;
++
++/**
++ * Base interface that represents an option
++ * in a configuration file.
++ */
++public interface Option {
++
++    /**
++     * @return the name of this option.
++     */
++    String getName();
++
++    /**
++     * @return the value of this option.
++     */
++    <T> T getValue();
++
++    /**
++     * Sets given generic as value.
++     *
++     * @param value the new value
++     * @param <T>   represents value type
++     */
++    <T> void setValue(T value);
++
++    /**
++     * @return the default value of this option.
++     */
++    <T> T getDefaultValue();
++
++    static <T> Option simple(String name, T defaultValue, T value) {
++        return new SimpleOption(name, defaultValue, value);
++    }
++
++    static <T> Option simple(String name, T defaultValue) {
++        return simple(name, defaultValue, defaultValue);
++    }
++}
+diff --git a/src/main/java/us/mineaqua/spigot/option/SimpleOption.java b/src/main/java/us/mineaqua/spigot/option/SimpleOption.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c3797ea8e8d06438cdd0216ded7a8f7fa057056
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/option/SimpleOption.java
+@@ -0,0 +1,41 @@
++package us.mineaqua.spigot.option;
++
++public class SimpleOption implements Option {
++
++    private final String name;
++    private final Object defaultValue;
++
++    private Object value;
++
++    public SimpleOption(String name, Object defaultValue, Object value) {
++        this.name = name;
++        this.defaultValue = defaultValue;
++        this.value = value;
++    }
++
++    public SimpleOption(String name, Object defaultValue) {
++        this(name, defaultValue, defaultValue);
++    }
++
++    @Override
++    public String getName() {
++        return name;
++    }
++
++    @Override
++    @SuppressWarnings("unchecked")
++    public <T> T getValue() {
++        return (T) value;
++    }
++
++    @Override
++    public <T> void setValue(T value) {
++        this.value = value;
++    }
++
++    @Override
++    @SuppressWarnings("unchecked")
++    public <T> T getDefaultValue() {
++        return (T) defaultValue;
++    }
++}
