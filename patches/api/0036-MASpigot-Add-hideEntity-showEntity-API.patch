@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 2 Aug 2026 04:00:00 -0400
+Subject: [PATCH] MASpigot Add hideEntity/showEntity API
+
+Exposes the existing NMS EntityPlayer#d(Entity) mechanism as a public API
+on org.bukkit.entity.Player, allowing plugins to hide and show any entity
+type (not just players) from specific viewers.
+
+diff --git a/src/main/java/org/bukkit/entity/Player.java b/src/main/java/org/bukkit/entity/Player.java
+index 9ef233b8d928d1c53e203e34943dee3d72268b5f..c889b1c05ad542baf6e7f2041f55d8f89dd25aa8 100644
+--- a/src/main/java/org/bukkit/entity/Player.java
++++ b/src/main/java/org/bukkit/entity/Player.java
+@@ -1052,6 +1052,27 @@ public interface Player extends HumanEntity, Conversable, CommandSender, Offline
+      */
+     public void showPlayer(Player player);
+ 
++    // MASpigot start - custom entity hide/show API
++    /**
++     * Hides any entity from this player. The entity will be completely
++     * invisible and will not send any packets to this player.
++     * <p>
++     * For player entities, prefer {@link #hidePlayer(Player)} instead.
++     *
++     * @param entity Entity to hide
++     */
++    public void hideEntity(org.bukkit.entity.Entity entity);
++
++    /**
++     * Allows this player to see an entity that was previously hidden
++     * with {@link #hideEntity(org.bukkit.entity.Entity)}.
++     * <p>
++     * For player entities, prefer {@link #showPlayer(Player)} instead.
++     *
++     * @param entity Entity to show
++     */
++    public void showEntity(org.bukkit.entity.Entity entity);
++    // MASpigot end
++
+     /**
+      * Checks to see if a player has been hidden from this player
+      *

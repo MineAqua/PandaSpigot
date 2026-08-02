@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Sat, 2 Aug 2026 04:05:00 -0400
+Subject: [PATCH] MASpigot Add hideEntity/showEntity implementation
+
+Implements the new hideEntity/showEntity API in CraftPlayer.
+- hideEntity delegates to EntityPlayer#d(Entity) which sends
+  PacketPlayOutEntityDestroy for human entities, or queues the
+  entity ID in removeQueue for batch removal on the next tick.
+- showEntity removes the entity from removeQueue and re-adds it
+  via EntityTrackerEntry#updatePlayer, which sends the spawn
+  packet, metadata, and NBT to the viewer.
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 5b1b6199f5cfc998cd6a2e07b9795b6b442e4a6c..e9a49b7067a85c18508eb06f69a9109a0fbb5d02 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -1129,6 +1129,36 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         }
+     }
+ 
++    // MASpigot start - custom entity hide/show API
++    @Override
++    public void hideEntity(org.bukkit.entity.Entity entity) {
++        Validate.notNull(entity, "hidden entity cannot be null");
++        if (getHandle().playerConnection == null) return;
++        if (equals(entity)) return;
++        getHandle().d(((CraftEntity) entity).getHandle());
++    }
++
++    @Override
++    public void showEntity(org.bukkit.entity.Entity entity) {
++        Validate.notNull(entity, "shown entity cannot be null");
++        if (getHandle().playerConnection == null) return;
++        if (equals(entity)) return;
++
++        net.minecraft.server.Entity nmsEntity = ((CraftEntity) entity).getHandle();
++        EntityTracker tracker = ((WorldServer) nmsEntity.world).tracker;
++        EntityTrackerEntry entry = (EntityTrackerEntry) tracker.trackedEntities.get(nmsEntity.getId());
++        if (entry != null) {
++            getHandle().removeQueue.remove(Integer.valueOf(nmsEntity.getId()));
++            if (!entry.trackedPlayers.contains(getHandle())) {
++                entry.updatePlayer(getHandle());
++            }
++        }
++    }
++    // MASpigot end
++
+     public void setPlayerProfile(com.destroystokyo.paper.profile.PlayerProfile profile) {
+         EntityPlayer self = getHandle();
+         self.setProfile(com.destroystokyo.paper.profile.CraftPlayerProfile.asAuthlibCopy(profile));
