@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MineAqua <mineaquanettm@gmail.com>
+Date: Tue, 11 Aug 2026 00:00:00 -0400
+Subject: [PATCH] MASpigot Restore MovementHandler extension
+
+Restores MASpigot's public movement extension point for projects that need
+callbacks for player location and rotation changes.
+
+diff --git a/src/main/java/us/mineaqua/spigot/movement/MovementHandler.java b/src/main/java/us/mineaqua/spigot/movement/MovementHandler.java
+new file mode 100644
+index 000000000..e3f58e10a
+--- /dev/null
++++ b/src/main/java/us/mineaqua/spigot/movement/MovementHandler.java
+@@ -0,0 +1,11 @@
++package us.mineaqua.spigot.movement;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Player;
++
++public interface MovementHandler {
++
++    void onLocationChange(Player player, Location to, Location from);
++
++    void onRotationChange(Player player, Location to, Location from);
++}
+-- 
+2.43.0
