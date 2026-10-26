@@ -3,6 +3,7 @@ Fork of Paper for 1.8.8 focused on improved performance and stability.
 
 ## Highlights
 - **Backported API enhancements from newer versions**
+    - Native Adventure API
     - ServerTickStartEvent & ServerTickEndEvent
     - PlayerChunkLoadEvent & PlayerChunkUnloadEvent
     - PlayerHandshakeEvent
@@ -65,17 +66,13 @@ dependencies {
 ```
 </details>
 
-## Building
-To compile PandaSpigot, you'll need:
-- JDK 17 (required to run the decompiler)
+## Requirements
+To work with PandaSpigot, you will need:
+- JDK 17 or higher
 - Git
 - Bash
 
 🧩 Although JDK 17 is required for building, the compiled JAR remains fully compatible with Java 8.
-
-Building, patching, and compiling are all done through the main `panda` script.
-
-PandaSpigot can be built by running `./panda jar`, and you will find the final Paperclip jar in `paperclip.jar`
 
 ### Panda Bash build script
 The `panda` Bash script is the entry point for setup, patching, and builds.
@@ -89,8 +86,9 @@ Normal commands:
 | `rb`, `rebuild` | Rebuild patches, can be called from anywhere. |
 | `setup` | Remap, decompile, and patch Minecraft. Can be run from anywhere. |
 | `p`, `patch` | Apply all patches to the project without building it. Can be run from anywhere. |
-| `j`, `jar` | Apply all patches and build the project, `paperclip.jar` will be output. Can be run from anywhere. |
-| `c`, `clean` | Removes all generated files, `PandaSpigot-API`, `PandaSpigot-Server`, and `work`. |
+| `j`, `jar` | Build the project, `paperclip.jar` will be output. Can be run from anywhere. |
+| `c`, `clean` | Removes build files under `PandaSpigot-API`, `PandaSpigot-Server`. |
+| `dc`, `distclean` | Removes all generated files, `PandaSpigot-API`, `PandaSpigot-Server`, `base`, and `work`. |
 | `con`, `continue` | Shortcut command for running `git am --continue` or `git rebase --continue`. |
 
 Commands that require `. ./panda install` first:

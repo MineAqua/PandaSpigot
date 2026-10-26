@@ -49,7 +49,7 @@ case "$1" in
     (
         set -e
         cd "$basedir"
-        scripts/build.sh "$basedir" "--setup" || exit 1
+        scripts/setup.sh "$basedir" || exit 1
     ) || failed=1
     ;;
     "p" | "patch")
@@ -63,7 +63,7 @@ case "$1" in
     (
         set -e
         cd "$basedir"
-        scripts/build.sh "$basedir" "--jar" || exit 1
+        ./gradlew build && ./scripts/paperclip.sh "$basedir" || exit 1
     ) || failed=1
     ;;
     "pc" | "paperclip")
@@ -72,15 +72,6 @@ case "$1" in
         cd "$basedir"
         scripts/paperclip.sh "$basedir" || exit 1
     ) || failed=1
-    ;;
-    "make")
-    (
-        if [[ "$2" = "bacon" ]] ; then
-            set -e
-            cd "$basedir"
-            scripts/build.sh "$basedir" "--jar"
-        fi
-    )
     ;;
     "r" | "root")
         cd "$basedir"
@@ -92,10 +83,16 @@ case "$1" in
         cd "$basedir/PandaSpigot-Server"
     ;;
     "c" | "clean")
+        rm -rf PandaSpigot-API/build
+        rm -rf PandaSpigot-Server/build
+        echo "Cleaned PandaSpigot build files"
+    ;;
+    "dc" | "distclean" | "reset")
         rm -rf PandaSpigot-API
         rm -rf PandaSpigot-Server
         rm -rf base
-        echo "Cleaned build files"
+        rm -rf work
+        echo "Cleaned ALL generated, build and work files"
     ;;
     "con" | "continue")
         if [ -d ".git/rebase-apply" ]; then
@@ -172,7 +169,8 @@ case "$1" in
         echo "  * setup               | Remap, decompile, and patch Minecraft. Can be run from anywhere."
         echo "  * p, patch            | Apply all patches to the project without building it. Can be run from anywhere."
         echo "  * j, jar              | Apply all patches and build the project, paperclip.jar will be output. Can be run from anywhere."
-        echo "  * c, clean            | Removes all generated files, PandaSpigot-API, PandaSpigot-Server, and work."
+        echo "  * c, clean            | Removes build files under PandaSpigot-API, PandaSpigot-Server."
+        echo "  * dc, distclean       | Removes all generated files, PandaSpigot-API, PandaSpigot-Server, base, and work."
         echo "  * con, continue       | Shortcut command for running git am --continue, or git rebase --continue."
         echo ""
         echo " These commands require the install command before use:"
