@@ -15,7 +15,7 @@ diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/
 index 5b1b6199f5cfc998cd6a2e07b9795b6b442e4a6c..e9a49b7067a85c18508eb06f69a9109a0fbb5d02 100644
 --- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
-@@ -1129,6 +1129,36 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+@@ -1129,6 +1129,33 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
          }
      }
  
