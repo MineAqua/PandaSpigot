@@ -11,7 +11,7 @@ diff --git a/src/main/java/org/bukkit/entity/Player.java b/src/main/java/org/buk
 index 9ef233b8d928d1c53e203e34943dee3d72268b5f..c889b1c05ad542baf6e7f2041f55d8f89dd25aa8 100644
 --- a/src/main/java/org/bukkit/entity/Player.java
 +++ b/src/main/java/org/bukkit/entity/Player.java
-@@ -1052,6 +1052,27 @@ public interface Player extends HumanEntity, Conversable, CommandSender, Offline
+@@ -1052,6 +1052,28 @@ public interface Player extends HumanEntity, Conversable, CommandSender, Offline
       */
      public void showPlayer(Player player);
  
