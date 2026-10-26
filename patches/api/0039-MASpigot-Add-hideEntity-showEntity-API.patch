@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: MineAqua <mineaquanettm@gmail.com>
-Date: Sat, 2 Aug 2026 04:00:00 -0400
+Date: Sun, 2 Aug 2026 04:00:00 -0400
 Subject: [PATCH] MASpigot Add hideEntity/showEntity API
 
 Exposes the existing NMS EntityPlayer#d(Entity) mechanism as a public API
@@ -8,10 +8,10 @@ on org.bukkit.entity.Player, allowing plugins to hide and show any entity
 type (not just players) from specific viewers.
 
 diff --git a/src/main/java/org/bukkit/entity/Player.java b/src/main/java/org/bukkit/entity/Player.java
-index 9ef233b8d928d1c53e203e34943dee3d72268b5f..c889b1c05ad542baf6e7f2041f55d8f89dd25aa8 100644
+index 5e1155cd962c453c65ebfe4d187ed75ac5145b99..6c479bc1888d6275b12af9e749b35e02cfcd741f 100644
 --- a/src/main/java/org/bukkit/entity/Player.java
 +++ b/src/main/java/org/bukkit/entity/Player.java
-@@ -1052,6 +1052,28 @@ public interface Player extends HumanEntity, Conversable, CommandSender, Offline
+@@ -1051,6 +1051,28 @@ public interface Player extends HumanEntity, Conversable, CommandSender, Offline
       */
      public void showPlayer(Player player);
  

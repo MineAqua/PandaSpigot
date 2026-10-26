@@ -7,7 +7,7 @@ Restores MASpigot's movement handler registry and invokes registered
 handlers for player location and rotation changes.
 
 diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
-index 64c9a9668..538bb537e 100644
+index 64c9a96682c1da8a80675b668785b874faf79348..538bb537eab31e201cd96d2908e7bcefa8ff71cb 100644
 --- a/src/main/java/net/minecraft/server/PlayerConnection.java
 +++ b/src/main/java/net/minecraft/server/PlayerConnection.java
 @@ -64,6 +64,8 @@ import co.aikar.timings.SpigotTimings; // Spigot
@@ -48,7 +48,7 @@ index 64c9a9668..538bb537e 100644
                      this.lastPosY = to.getY();
 diff --git a/src/main/java/us/mineaqua/spigot/server/MASpigot.java b/src/main/java/us/mineaqua/spigot/server/MASpigot.java
 new file mode 100644
-index 000000000..d15ed0fe5
+index 0000000000000000000000000000000000000000..0fd9cc300b2f9fbe7d627285a4c5ba7ebf6ac645
 --- /dev/null
 +++ b/src/main/java/us/mineaqua/spigot/server/MASpigot.java
 @@ -0,0 +1,20 @@
@@ -72,5 +72,3 @@ index 000000000..d15ed0fe5
 +        movementHandlers.add(handler);
 +    }
 +}
--- 
-2.43.0

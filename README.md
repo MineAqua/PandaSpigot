@@ -18,6 +18,11 @@ Fork of Paper for 1.8.8 focused on improved performance and stability.
     - Customizable knockback
     - World and player data saving
 
+## Parallel world ticking
+`parallelWorldTicking` is an opt-in setting in `pandaspigot.yml`. It assigns loaded worlds to a bounded number of stable worker lanes and waits for every lane before the server continues to connection and player processing. `parallelWorldTickingThreads` controls the lane limit (2–16); changing it reassigns worlds to new lanes.
+
+This runs world and entity events from worker threads. Enable it only when every installed plugin supports concurrent world events; plugins must not block waiting for synchronous server-thread work during those events. It does not isolate regions or arenas within one world. Cross-world entity transfers requested during a parallel world tick are skipped, and world ticks run serially while Timings is enabled. The setting is off by default.
+
 See a full list of patches [here](./patches/).
 
 ## Using

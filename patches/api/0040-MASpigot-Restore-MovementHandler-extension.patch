@@ -8,7 +8,7 @@ callbacks for player location and rotation changes.
 
 diff --git a/src/main/java/us/mineaqua/spigot/movement/MovementHandler.java b/src/main/java/us/mineaqua/spigot/movement/MovementHandler.java
 new file mode 100644
-index 000000000..e3f58e10a
+index 0000000000000000000000000000000000000000..ac70d5612d65e77b7f9d3ce8de676e0ebd9cc3dc
 --- /dev/null
 +++ b/src/main/java/us/mineaqua/spigot/movement/MovementHandler.java
 @@ -0,0 +1,11 @@
@@ -23,5 +23,3 @@ index 000000000..e3f58e10a
 +
 +    void onRotationChange(Player player, Location to, Location from);
 +}
--- 
-2.43.0

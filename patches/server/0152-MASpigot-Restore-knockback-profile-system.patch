@@ -39,16 +39,16 @@ MineAqua's players are used to.
   sub-commands could never actually be invoked.
 
 diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
-index d18af288085fe6bab3f378d6269b3d4b97314aba..e5d2a92884ea98e39d1a2ccca77d49e890cbbe4a 100644
+index dc4c74ea1a4afb70f3b8fb2b734d09d5d1e4247c..997a78561ab74c6bf8e036f13182c4c9bd9fcb66 100644
 --- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
 +++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
-@@ -37,18 +37,8 @@ public class PandaSpigotWorldConfig {
-             "By default, this is true (vanilla behaviour)")
-     public boolean randomArrowTrajectory = true;
-     
+@@ -6,18 +6,8 @@ import org.spongepowered.configurate.objectmapping.meta.Comment;
+ @ConfigSerializable
+ @SuppressWarnings({"FieldCanBeLocal", "FieldMayBeFinal"})
+ public class PandaSpigotWorldConfig {
 -    @Comment("These options control velocity players receive when damaged.")
 -    public KnockbackConfig knockback;
--    
+-
 -    @ConfigSerializable
 -    public static class KnockbackConfig {
 -        public double friction = 2.0;
@@ -61,8 +61,8 @@ index d18af288085fe6bab3f378d6269b3d4b97314aba..e5d2a92884ea98e39d1a2ccca77d49e8
 +    // MASpigot - knockback is now controlled entirely by per-player KnockbackProfile
 +    // profiles (see the knockback/ directory), replacing this world-scoped config.
  
-     @Comment("When enabled, armor durability damage taken by players is scaled by\n" +
-             "'armorDamageMultiplier' instead of vanilla armor damage.\n" +
+     @Comment("This option makes it so that when players are teleported to a location\n" +
+             "with the same rotation they currently have, the server will send a special\n" +
 diff --git a/src/main/java/net/minecraft/server/EntityHuman.java b/src/main/java/net/minecraft/server/EntityHuman.java
 index 524ff60ada7392ec1fd803661f957c19c50b2c2e..eed4e4618f9b0526880ba8aec96e5437c6082b7e 100644
 --- a/src/main/java/net/minecraft/server/EntityHuman.java
@@ -371,10 +371,10 @@ index 9201e4111cd160c414f52d2b88fa28e2ac82ba69..21aebdf5559814c3e4213f5bd69ae6e3
          super.copyTo(entityhuman, flag);
          this.lastSentExp = -1;
 diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
-index 354c4388108e06757dd964d9d19f90cf88ed9f60..0cae3398f85789a3c7e4d4e32d8c9b853af46700 100644
+index 0a1a48c97f643171bcafe9a10d44c1deb193dfda..bc965c657230c5795d2d577c0a3f5626d3b1299f 100644
 --- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
-@@ -1770,6 +1770,18 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+@@ -1774,6 +1774,18 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
          }
      };
  

@@ -1,0 +1,741 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 18:49:33 -0300
+Subject: [PATCH] PandaSpigot: add parallel world ticking
+
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+index d8245c6ae0309ff4bb2676a818a596db9923d118..9303563885451cdf7dd1de10eea16a08baa86c58 100644
+--- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
++++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
+@@ -275,4 +275,19 @@ public class PandaSpigotConfig {
+         "Default: -20.0")
+     public double potionThrowOffset = -20.0;
+     // MASpigot end
++
++    // PandaSpigot start - parallel world ticking
++    @Comment("Whether independent worlds are ticked on dedicated worker lanes. This can run\n" +
++        "world and entity events from worker threads, so every installed plugin must be\n" +
++        "compatible with parallel world ticking and must not block waiting for server-thread\n" +
++        "work from a world event. This does not isolate chunks or regions inside a world.\n" +
++        "Cross-world entity transfers are skipped during a parallel tick.\n" +
++        "Default: false")
++    public boolean parallelWorldTicking = false;
++
++    @Comment("Maximum number of world tick worker lanes. Each world stays assigned to the\n" +
++        "same lane until it is unloaded or this setting changes. Values are limited to 2-16.\n" +
++        "Default: 2")
++    public int parallelWorldTickingThreads = 2;
++    // PandaSpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/Entity.java b/src/main/java/net/minecraft/server/Entity.java
+index e2b6f0a788fe56cacbadb457a7c65b3412a1b528..2a554313030724f2c186abae6bf21180d6f8104d 100644
+--- a/src/main/java/net/minecraft/server/Entity.java
++++ b/src/main/java/net/minecraft/server/Entity.java
+@@ -1982,6 +1982,10 @@ public abstract class Entity implements ICommandListener {
+             Location exit = exitWorld != null ? minecraftserver.getPlayerList().calculateTarget(enter, minecraftserver.getWorldServer(i)) : null;
+             boolean useTravelAgent = exitWorld != null && !(this.dimension == 1 && exitWorld.dimension == 1); // don't use agent for custom worlds or return from THE_END
+ 
++            if (ParallelWorldTickManager.rejectCrossWorldTransfer((WorldServer) this.world, exitWorld)) {
++                return;
++            }
++
+             TravelAgent agent = exit != null ? (TravelAgent) ((CraftWorld) exit.getWorld()).getHandle().getTravelAgent() : org.bukkit.craftbukkit.CraftTravelAgent.DEFAULT; // return arbitrary TA to compensate for implementation dependent plugins
+             EntityPortalEvent event = new EntityPortalEvent(this.getBukkitEntity(), enter, exit, agent);
+             event.useTravelAgent(useTravelAgent);
+@@ -1998,6 +2002,9 @@ public abstract class Entity implements ICommandListener {
+         if (true) {
+             WorldServer worldserver = ((CraftWorld) getBukkitEntity().getLocation().getWorld()).getHandle();
+             WorldServer worldserver1 = ((CraftWorld) exit.getWorld()).getHandle();
++            if (ParallelWorldTickManager.rejectCrossWorldTransfer(worldserver, worldserver1)) {
++                return;
++            }
+             int i = worldserver1.dimension;
+             // CraftBukkit end
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityTracker.java b/src/main/java/net/minecraft/server/EntityTracker.java
+index 3863b02c63403011320a798c8c5f9d4d35491634..34c80264ffb3d6d8ad6d8151583f7aabe0c1b69b 100644
+--- a/src/main/java/net/minecraft/server/EntityTracker.java
++++ b/src/main/java/net/minecraft/server/EntityTracker.java
+@@ -94,7 +94,7 @@ public class EntityTracker {
+     }
+ 
+     public void addEntity(Entity entity, int i, final int j, boolean flag) {
+-        org.spigotmc.AsyncCatcher.catchOp( "entity track"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("entity track", this.world); // Spigot, PandaSpigot - parallel world ticking
+         i = org.spigotmc.TrackingRange.getEntityTrackingRange(entity, i); // Spigot
+         if (i > this.e) {
+             i = this.e;
+@@ -146,7 +146,7 @@ public class EntityTracker {
+     }
+ 
+     public void untrackEntity(Entity entity) {
+-        org.spigotmc.AsyncCatcher.catchOp( "entity untrack"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("entity untrack", this.world); // Spigot, PandaSpigot - parallel world ticking
+         if (entity instanceof EntityPlayer) {
+             EntityPlayer entityplayer = (EntityPlayer) entity;
+             Iterator iterator = this.c.iterator();
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index a132a29f82bc20da22ee04622fe1df513cabea70..e4ac469ae7743fa1a314eddd70623d7e2397a4ea 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -116,6 +116,7 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+     public static int currentTick = 0; // PaperSpigot - Further improve tick loop
+     public final Thread primaryThread;
+     public java.util.Queue<Runnable> processQueue = new java.util.concurrent.ConcurrentLinkedQueue<Runnable>();
++    private final ParallelWorldTickManager parallelWorldTickManager = new ParallelWorldTickManager(); // PandaSpigot - parallel world ticking
+     public int autosavePeriod;
+     // CraftBukkit end
+     // PandaSpigot start - Modern Tick Loop
+@@ -465,6 +466,7 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+         // CraftBukkit end
+         if (!this.N) {
+             MinecraftServer.LOGGER.info("Stopping server");
++            this.parallelWorldTickManager.shutdown(); // PandaSpigot - parallel world ticking
+             SpigotTimings.stopServer(); // Spigot
+ 
+             // CraftBukkit start
+@@ -912,93 +914,11 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+         // PandaSpigot end
+         SpigotTimings.timeUpdateTimer.stopTiming(); // Spigot
+ 
+-        int i;
+-
+-        for (i = 0; i < this.worlds.size(); ++i) {
+-            long j = System.nanoTime();
+-
+-            // if (i == 0 || this.getAllowNether()) {
++        if (!this.parallelWorldTickManager.tickWorlds(this.worlds, this::tickWorld)) {
++            for (int i = 0; i < this.worlds.size(); ++i) {
+                 WorldServer worldserver = this.worlds.get(i);
+-                worldserver.hasEntityMoveEvent = io.papermc.paper.event.entity.EntityMoveEvent.getHandlerList().getRegisteredListeners().length > 0; // PandaSpigot
+-                worldserver.hasPhysicsEvent = org.bukkit.event.block.BlockPhysicsEvent.getHandlerList().getRegisteredListeners().length > 0; // PandaSpigot
+-
+-                this.methodProfiler.a(worldserver.getWorldData().getName());
+-                /* Drop global time updates
+-                if (this.ticks % 20 == 0) {
+-                    this.methodProfiler.a("timeSync");
+-                    this.v.a(new PacketPlayOutUpdateTime(worldserver.getTime(), worldserver.getDayTime(), worldserver.getGameRules().getBoolean("doDaylightCycle")), worldserver.worldProvider.getDimension());
+-                    this.methodProfiler.b();
+-                }
+-                // CraftBukkit end */
+-
+-                this.methodProfiler.a("tick");
+-
+-                CrashReport crashreport;
+-
+-                try {
+-                    worldserver.timings.doTick.startTiming(); // Spigot
+-                    worldserver.doTick();
+-                    worldserver.timings.doTick.stopTiming(); // Spigot
+-                } catch (Throwable throwable) {
+-                    // Spigot Start
+-                    try {
+-                    crashreport = CrashReport.a(throwable, "Exception ticking world");
+-                    } catch (Throwable t){
+-                        throw new RuntimeException("Error generating crash report", t);
+-                    }
+-                    // Spigot End
+-                    worldserver.a(crashreport);
+-                    throw new ReportedException(crashreport);
+-                }
+-
+-                try {
+-                    worldserver.timings.tickEntities.startTiming(); // Spigot
+-                    worldserver.tickEntities();
+-                    worldserver.timings.tickEntities.stopTiming(); // Spigot
+-                } catch (Throwable throwable1) {
+-                    // Spigot Start
+-                    try {
+-                    crashreport = CrashReport.a(throwable1, "Exception ticking world entities");
+-                    } catch (Throwable t){
+-                        throw new RuntimeException("Error generating crash report", t);
+-                    }
+-                    // Spigot End
+-                    worldserver.a(crashreport);
+-                    throw new ReportedException(crashreport);
+-                }
+-
+-                this.methodProfiler.b();
+-                this.methodProfiler.a("tracker");
+-                worldserver.timings.tracker.startTiming(); // Spigot
+-                // PandaSpigot start - controlled flush for entity tracker packets
+-                List<NetworkManager> disabledFlushes = new ArrayList<>(worldserver.players.size());
+-                for (EntityHuman player : worldserver.players) {
+-                    if (!(player instanceof EntityPlayer)) continue; // skip non-player entities
+-                    PlayerConnection connection = ((EntityPlayer) player).playerConnection;
+-                    if (connection != null) {
+-                        connection.networkManager.disableAutomaticFlush();
+-                        disabledFlushes.add(connection.networkManager);
+-                    }
+-                }
+-                try {
+-                // PandaSpigot end
+-                if (this.getPlayerList().getPlayerCount() > 0) { // PandaSpigot - Skip updating entity tracker if zero players online
+-                worldserver.getTracker().updatePlayers();
+-                } // PandaSpigot
+-                // PandaSpigot start - controlled flush for entity tracker packets
+-                } finally {
+-                    for (NetworkManager networkManager : disabledFlushes) {
+-                        networkManager.enableAutomaticFlush();
+-                    }
+-                }
+-                // PandaSpigot end
+-                worldserver.timings.tracker.stopTiming(); // Spigot
+-                this.methodProfiler.b();
+-                this.methodProfiler.b();
+-                worldserver.explosionDensityCache.clear(); // PaperSpigot - Optimize explosions
+-            // } // CraftBukkit
+-
+-            // this.i[i][this.ticks % 100] = System.nanoTime() - j; // CraftBukkit
++                this.tickWorld(worldserver);
++            }
+         }
+ 
+         this.methodProfiler.c("connection");
+@@ -1012,7 +932,7 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+         this.methodProfiler.c("tickables");
+ 
+         SpigotTimings.tickablesTimer.startTiming(); // Spigot
+-        for (i = 0; i < this.p.size(); ++i) {
++        for (int i = 0; i < this.p.size(); ++i) {
+             ((IUpdatePlayerListBox) this.p.get(i)).c();
+         }
+         SpigotTimings.tickablesTimer.stopTiming(); // Spigot
+@@ -1020,6 +940,64 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+         this.methodProfiler.b();
+     }
+ 
++    // PandaSpigot start - parallel world ticking
++    private void tickWorld(WorldServer worldserver) {
++        worldserver.hasEntityMoveEvent = io.papermc.paper.event.entity.EntityMoveEvent.getHandlerList().getRegisteredListeners().length > 0; // PandaSpigot
++        worldserver.hasPhysicsEvent = org.bukkit.event.block.BlockPhysicsEvent.getHandlerList().getRegisteredListeners().length > 0; // PandaSpigot
++
++        CrashReport crashreport;
++        try {
++            worldserver.timings.doTick.startTiming(); // Spigot
++            worldserver.doTick();
++            worldserver.timings.doTick.stopTiming(); // Spigot
++        } catch (Throwable throwable) {
++            try {
++                crashreport = CrashReport.a(throwable, "Exception ticking world");
++            } catch (Throwable t) {
++                throw new RuntimeException("Error generating crash report", t);
++            }
++            worldserver.a(crashreport);
++            throw new ReportedException(crashreport);
++        }
++
++        try {
++            worldserver.timings.tickEntities.startTiming(); // Spigot
++            worldserver.tickEntities();
++            worldserver.timings.tickEntities.stopTiming(); // Spigot
++        } catch (Throwable throwable1) {
++            try {
++                crashreport = CrashReport.a(throwable1, "Exception ticking world entities");
++            } catch (Throwable t) {
++                throw new RuntimeException("Error generating crash report", t);
++            }
++            worldserver.a(crashreport);
++            throw new ReportedException(crashreport);
++        }
++
++        worldserver.timings.tracker.startTiming(); // Spigot
++        List<NetworkManager> disabledFlushes = new ArrayList<>(worldserver.players.size());
++        for (EntityHuman player : worldserver.players) {
++            if (!(player instanceof EntityPlayer)) continue; // skip non-player entities
++            PlayerConnection connection = ((EntityPlayer) player).playerConnection;
++            if (connection != null) {
++                connection.networkManager.disableAutomaticFlush();
++                disabledFlushes.add(connection.networkManager);
++            }
++        }
++        try {
++            if (this.getPlayerList().getPlayerCount() > 0) { // PandaSpigot - Skip updating entity tracker if zero players online
++                worldserver.getTracker().updatePlayers();
++            }
++        } finally {
++            for (NetworkManager networkManager : disabledFlushes) {
++                networkManager.enableAutomaticFlush();
++            }
++        }
++        worldserver.timings.tracker.stopTiming(); // Spigot
++        worldserver.explosionDensityCache.clear(); // PaperSpigot - Optimize explosions
++    }
++    // PandaSpigot end
++
+     public boolean getAllowNether() {
+         return true;
+     }
+diff --git a/src/main/java/net/minecraft/server/ParallelWorldTickManager.java b/src/main/java/net/minecraft/server/ParallelWorldTickManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4946e498119871457684f27ab15b1d870a171910
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/ParallelWorldTickManager.java
+@@ -0,0 +1,237 @@
++package net.minecraft.server;
++
++import co.aikar.timings.Timings;
++import com.hpfxd.pandaspigot.config.PandaSpigotConfig;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.IdentityHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import java.util.concurrent.Future;
++import java.util.concurrent.ThreadFactory;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.function.Consumer;
++
++/**
++ * Runs independent world tick phases on stable, single-threaded lanes.
++ * World ticks are still joined before the server proceeds to connection and player ticks.
++ */
++public final class ParallelWorldTickManager {
++
++    private static final int MAX_LANES = 16;
++    private static final ThreadLocal<WorldServer> CURRENT_WORLD = new ThreadLocal<>();
++    private static final AtomicBoolean CROSS_WORLD_WARNING_LOGGED = new AtomicBoolean();
++
++    private final Map<WorldServer, Integer> worldLanes = new IdentityHashMap<>();
++    private List<ExecutorService> lanes = Collections.emptyList();
++    private boolean timingsWarningLogged;
++
++    /**
++     * @return true when ticks were dispatched to worker lanes; false when the caller should
++     *         use the regular serial tick path.
++     */
++    public boolean tickWorlds(List<WorldServer> worlds, Consumer<WorldServer> tickWorld) {
++        PandaSpigotConfig config = PandaSpigotConfig.get();
++        if (config == null || !config.parallelWorldTicking || worlds.size() < 2) {
++            if (!lanes.isEmpty()) {
++                shutdownLanes();
++                worldLanes.clear();
++            }
++            return false;
++        }
++
++        // A number of Spigot and Aikar timings are global mutable counters, not per-thread.
++        if (Timings.isTimingsEnabled()) {
++            if (!timingsWarningLogged) {
++                timingsWarningLogged = true;
++                MinecraftServer.LOGGER.warn("Parallel world ticking is enabled, but world ticks will remain serial while Timings is active.");
++            }
++            return false;
++        }
++
++        int laneCount = Math.max(2, Math.min(MAX_LANES, config.parallelWorldTickingThreads));
++        ensureLanes(laneCount);
++
++        List<WorldServer> snapshot = new ArrayList<>(worlds);
++        assignWorlds(snapshot);
++
++        List<List<WorldServer>> worldsByLane = new ArrayList<>(laneCount);
++        for (int i = 0; i < laneCount; i++) {
++            worldsByLane.add(new ArrayList<WorldServer>());
++        }
++        for (WorldServer world : snapshot) {
++            worldsByLane.get(worldLanes.get(world)).add(world);
++        }
++
++        List<Future<?>> futures = new ArrayList<>(laneCount);
++        for (int i = 0; i < laneCount; i++) {
++            final List<WorldServer> laneWorlds = worldsByLane.get(i);
++            if (laneWorlds.isEmpty()) {
++                continue;
++            }
++            futures.add(lanes.get(i).submit(() -> {
++                for (WorldServer world : laneWorlds) {
++                    CURRENT_WORLD.set(world);
++                    try {
++                        tickWorld.accept(world);
++                    } finally {
++                        CURRENT_WORLD.remove();
++                    }
++                }
++            }));
++        }
++
++        Throwable failure = null;
++        boolean interrupted = false;
++        for (Future<?> future : futures) {
++            boolean complete = false;
++            while (!complete) {
++                try {
++                    future.get();
++                    complete = true;
++                } catch (InterruptedException e) {
++                    // Do not let an interrupted wait leave world workers running into the next tick.
++                    interrupted = true;
++                } catch (ExecutionException e) {
++                    if (failure == null) {
++                        failure = e.getCause();
++                    }
++                    complete = true;
++                }
++            }
++        }
++
++        if (interrupted) {
++            Thread.currentThread().interrupt();
++        }
++        if (failure != null) {
++            rethrow(failure);
++        }
++        if (interrupted) {
++            throw new IllegalStateException("Interrupted while waiting for parallel world ticks");
++        }
++        return true;
++    }
++
++    public static boolean isTickingWorld(WorldServer world) {
++        return CURRENT_WORLD.get() == world;
++    }
++
++    public static boolean isParallelWorldTickThread() {
++        return CURRENT_WORLD.get() != null;
++    }
++
++    public static void assertWorldAccess(World world, String operation) {
++        WorldServer currentWorld = CURRENT_WORLD.get();
++        if (currentWorld != null && currentWorld != world) {
++            throw new IllegalStateException("World tick worker cannot access another world during " + operation + "!");
++        }
++    }
++
++    public static boolean rejectCrossWorldTransfer(WorldServer from, WorldServer to) {
++        if (isTickingWorld(from) && from != to) {
++            if (CROSS_WORLD_WARNING_LOGGED.compareAndSet(false, true)) {
++                MinecraftServer.LOGGER.warn("A cross-world entity transfer was skipped during parallel world ticking. Disable parallel-world-ticking or perform transfers from the server thread.");
++            }
++            return true;
++        }
++        return false;
++    }
++
++    public void shutdown() {
++        shutdownLanes();
++        worldLanes.clear();
++    }
++
++    private void ensureLanes(int count) {
++        if (lanes.size() == count) {
++            return;
++        }
++        shutdownLanes();
++        List<ExecutorService> replacement = new ArrayList<>(count);
++        for (int i = 0; i < count; i++) {
++            final int lane = i;
++            ThreadFactory factory = runnable -> {
++                Thread thread = new Thread(runnable, "Panda world tick " + lane);
++                thread.setDaemon(true);
++                return thread;
++            };
++            replacement.add(Executors.newSingleThreadExecutor(factory));
++        }
++        lanes = replacement;
++        worldLanes.clear();
++    }
++
++    private void assignWorlds(List<WorldServer> worlds) {
++        Map<WorldServer, Boolean> loaded = new IdentityHashMap<>();
++        for (WorldServer world : worlds) {
++            loaded.put(world, Boolean.TRUE);
++        }
++        worldLanes.keySet().retainAll(loaded.keySet());
++
++        int[] laneLoads = new int[lanes.size()];
++        for (Integer lane : worldLanes.values()) {
++            laneLoads[lane]++;
++        }
++        for (WorldServer world : worlds) {
++            if (worldLanes.containsKey(world)) {
++                continue;
++            }
++            int leastLoadedLane = 0;
++            for (int lane = 1; lane < laneLoads.length; lane++) {
++                if (laneLoads[lane] < laneLoads[leastLoadedLane]) {
++                    leastLoadedLane = lane;
++                }
++            }
++            worldLanes.put(world, leastLoadedLane);
++            laneLoads[leastLoadedLane]++;
++        }
++    }
++
++    private void shutdownLanes() {
++        if (lanes.isEmpty()) {
++            return;
++        }
++        for (ExecutorService lane : lanes) {
++            lane.shutdown();
++        }
++        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
++        boolean interrupted = false;
++        for (ExecutorService lane : lanes) {
++            long remaining = deadline - System.nanoTime();
++            if (remaining <= 0) {
++                break;
++            }
++            try {
++                lane.awaitTermination(remaining, TimeUnit.NANOSECONDS);
++            } catch (InterruptedException e) {
++                interrupted = true;
++                break;
++            }
++        }
++        for (ExecutorService lane : lanes) {
++            if (!lane.isTerminated()) {
++                lane.shutdownNow();
++            }
++        }
++        lanes = Collections.emptyList();
++        if (interrupted) {
++            Thread.currentThread().interrupt();
++        }
++    }
++
++    private static void rethrow(Throwable failure) {
++        if (failure instanceof RuntimeException) {
++            throw (RuntimeException) failure;
++        }
++        if (failure instanceof Error) {
++            throw (Error) failure;
++        }
++        throw new RuntimeException(failure);
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
+index 10b56ef322cb0d70be1ff5a439f80216694c36a0..ea4c32c09349068ee3d7473750e4cf730f857c0d 100644
+--- a/src/main/java/net/minecraft/server/PlayerList.java
++++ b/src/main/java/net/minecraft/server/PlayerList.java
+@@ -667,6 +667,9 @@ public abstract class PlayerList {
+ 
+     // CraftBukkit start - Replaced the standard handling of portals with a more customised method.
+     public void changeDimension(EntityPlayer entityplayer, int i, TeleportCause cause) {
++        if (ParallelWorldTickManager.rejectCrossWorldTransfer(entityplayer.u(), this.server.getWorldServer(i))) {
++            return;
++        }
+         WorldServer exitWorld = null;
+         if (entityplayer.dimension < CraftWorld.CUSTOM_DIMENSION_OFFSET) { // plugins must specify exit from custom Bukkit worlds
+             // only target existing worlds (compensate for allow-nether/allow-end as false)
+diff --git a/src/main/java/net/minecraft/server/World.java b/src/main/java/net/minecraft/server/World.java
+index 522c63e7f884a8b2202b111c81df9b54384703d5..e19d9ebb17a8a9a0bc2a249b13cb2e33b8a804f1 100644
+--- a/src/main/java/net/minecraft/server/World.java
++++ b/src/main/java/net/minecraft/server/World.java
+@@ -387,6 +387,7 @@ public abstract class World implements IBlockAccess {
+     }
+ 
+     public boolean setTypeAndData(BlockPosition blockposition, IBlockData iblockdata, int i) {
++        ParallelWorldTickManager.assertWorldAccess(this, "block change"); // PandaSpigot - parallel world ticking ownership
+         // CraftBukkit start - tree generation
+         if (this.captureTreeGeneration) {
+             BlockState blockstate = null;
+@@ -1120,7 +1121,7 @@ public abstract class World implements IBlockAccess {
+     }
+ 
+     public boolean addEntity(Entity entity, SpawnReason spawnReason) { // Changed signature, added SpawnReason
+-        org.spigotmc.AsyncCatcher.catchOp( "entity add"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("entity add", this); // Spigot, PandaSpigot - parallel world ticking
+         if (entity == null) return false;
+         // CraftBukkit end
+         int i = MathHelper.floor(entity.locX / 16.0D);
+@@ -1245,7 +1246,7 @@ public abstract class World implements IBlockAccess {
+     }
+ 
+     public void removeEntity(Entity entity) {
+-        org.spigotmc.AsyncCatcher.catchOp( "entity remove"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("entity remove", this); // Spigot, PandaSpigot - parallel world ticking
+         entity.die();
+         if (entity instanceof EntityHuman) {
+             this.players.remove(entity);
+@@ -2151,6 +2152,7 @@ public abstract class World implements IBlockAccess {
+     }
+ 
+     public void setTileEntity(BlockPosition blockposition, TileEntity tileentity) {
++        ParallelWorldTickManager.assertWorldAccess(this, "tile entity change"); // PandaSpigot - parallel world ticking ownership
+         if (tileentity != null && !tileentity.x()) {
+             // CraftBukkit start
+             if (captureBlockStates) {
+@@ -2888,7 +2890,7 @@ public abstract class World implements IBlockAccess {
+     }
+ 
+     public void b(Collection<Entity> collection) {
+-        org.spigotmc.AsyncCatcher.catchOp( "entity world add"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("entity world add", this); // Spigot, PandaSpigot - parallel world ticking
+         // CraftBukkit start
+         // this.entityList.addAll(collection);
+         Iterator iterator = collection.iterator();
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index 4d8c4058f370cfb3c090d7482dad70fc1493bd28..1a970e57d58f966e6a4d3f2ee3b1ae1a95867a98 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -676,6 +676,9 @@ public final class CraftServer implements Server {
+ 
+         // PaperSpigot Start
+         if (!Bukkit.isPrimaryThread()) {
++            if (net.minecraft.server.ParallelWorldTickManager.isParallelWorldTickThread()) {
++                throw new IllegalStateException("A world tick worker cannot synchronously dispatch a server command");
++            }
+             final CommandSender fSender = sender;
+             final String fCommandLine = commandLine;
+             Bukkit.getLogger().log(Level.SEVERE, "Command Dispatched Async: " + commandLine);
+@@ -888,6 +891,10 @@ public final class CraftServer implements Server {
+ 
+     @Override
+     public World createWorld(WorldCreator creator) {
++        if (net.minecraft.server.ParallelWorldTickManager.isParallelWorldTickThread()) {
++            throw new IllegalStateException("A world tick worker cannot load a world");
++        }
++        org.spigotmc.AsyncCatcher.catchOp("world load"); // PandaSpigot - world list changes stay on the server thread
+         Validate.notNull(creator, "Creator may not be null");
+ 
+         String name = creator.name();
+@@ -1006,6 +1013,10 @@ public final class CraftServer implements Server {
+ 
+     @Override
+     public boolean unloadWorld(World world, boolean save) {
++        if (net.minecraft.server.ParallelWorldTickManager.isParallelWorldTickThread()) {
++            throw new IllegalStateException("A world tick worker cannot unload a world");
++        }
++        org.spigotmc.AsyncCatcher.catchOp("world unload"); // PandaSpigot - world list changes stay on the server thread
+         if (world == null) {
+             return false;
+         }
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index da8164a0e797f0e747810b6b208af2e9d78e08ba..571ae920f3dd6b219e1ba60aefe4844fd6917b8a 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+@@ -186,7 +186,7 @@ public class CraftWorld implements World {
+     }
+ 
+     public boolean unloadChunkRequest(int x, int z, boolean safe) {
+-        org.spigotmc.AsyncCatcher.catchOp( "chunk unload"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("chunk unload", world); // Spigot, PandaSpigot - parallel world ticking
+         if (safe && isChunkInUse(x, z)) {
+             return false;
+         }
+@@ -197,7 +197,7 @@ public class CraftWorld implements World {
+     }
+ 
+     public boolean unloadChunk(int x, int z, boolean save, boolean safe) {
+-        org.spigotmc.AsyncCatcher.catchOp( "chunk unload"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("chunk unload", world); // Spigot, PandaSpigot - parallel world ticking
+         if (safe && isChunkInUse(x, z)) {
+             return false;
+         }
+@@ -270,7 +270,7 @@ public class CraftWorld implements World {
+     }
+ 
+     public boolean loadChunk(int x, int z, boolean generate) {
+-        org.spigotmc.AsyncCatcher.catchOp( "chunk load"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("chunk load", world); // Spigot, PandaSpigot - parallel world ticking
+         chunkLoadCount++;
+         if (generate) {
+             // Use the default variant of loadChunk when generate == true.
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+index 4f9179908e2cd74d6170a614a0971ef0f9ddaafa..74ca061f42d123c59dab2ea3bd3d6d25ae27d12e 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+@@ -246,6 +246,9 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
+ 
+         // Spigot start
+         if (!location.getWorld().equals(getWorld())) {
++            if (ParallelWorldTickManager.rejectCrossWorldTransfer((WorldServer) entity.world, ((CraftWorld) location.getWorld()).getHandle())) {
++                return false;
++            }
+           entity.teleportTo(location, cause.equals(TeleportCause.NETHER_PORTAL));
+           return true;
+         }
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index d9dc34910cfd9b294e1cb4159655cbeba490295f..fc45d94a2c9a0bf3589076938ee32b42c8bb0b36 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -653,9 +653,6 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+             return false;
+         }
+ 
+-        // If this player is riding another entity, we must dismount before teleporting.
+-        entity.mount(null);
+-
+         // Update the From Location
+         from = event.getFrom();
+         // Grab the new To Location dependent on whether the event was cancelled.
+@@ -664,6 +661,13 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         WorldServer fromWorld = ((CraftWorld) from.getWorld()).getHandle();
+         WorldServer toWorld = ((CraftWorld) to.getWorld()).getHandle();
+ 
++        if (net.minecraft.server.ParallelWorldTickManager.rejectCrossWorldTransfer(fromWorld, toWorld)) {
++            return false;
++        }
++
++        // If this player is riding another entity, we must dismount before teleporting.
++        entity.mount(null);
++
+         // Close any foreign inventory
+         if (getHandle().activeContainer != getHandle().defaultContainer) {
+             getHandle().closeInventory();
+diff --git a/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java b/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java
+index 1baec564c03b2d1320390de9c21dc8b1c2762614..b45f58934c9c91642d25f72ef94b54bd79ce921b 100644
+--- a/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java
++++ b/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java
+@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.TimeoutException;
+ 
+ import org.bukkit.plugin.Plugin;
++import net.minecraft.server.ParallelWorldTickManager;
+ 
+ class CraftFuture<T> extends CraftTask implements Future<T> {
+ 
+@@ -46,6 +47,9 @@ class CraftFuture<T> extends CraftTask implements Future<T> {
+     }
+ 
+     public synchronized T get(long timeout, final TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
++        if (!isDone() && ParallelWorldTickManager.isParallelWorldTickThread()) {
++            throw new IllegalStateException("A world tick worker cannot wait for a synchronous server task");
++        }
+         timeout = unit.toMillis(timeout);
+         long period = this.getPeriod();
+         long timestamp = timeout > 0 ? System.currentTimeMillis() : 0l;
+diff --git a/src/main/java/org/spigotmc/AsyncCatcher.java b/src/main/java/org/spigotmc/AsyncCatcher.java
+index 4b3aa85c9750d5a09f5261950c40e9bda3304776..2a93852e39c4a9a2db3c3b79442c9bff8b65f00c 100644
+--- a/src/main/java/org/spigotmc/AsyncCatcher.java
++++ b/src/main/java/org/spigotmc/AsyncCatcher.java
+@@ -1,6 +1,9 @@
+ package org.spigotmc;
+ 
+ import net.minecraft.server.MinecraftServer;
++import net.minecraft.server.World;
++import net.minecraft.server.WorldServer;
++import net.minecraft.server.ParallelWorldTickManager;
+ 
+ public class AsyncCatcher
+ {
+@@ -14,4 +17,22 @@ public class AsyncCatcher
+             throw new IllegalStateException( "Asynchronous " + reason + "!" );
+         }
+     }
++
++    // PandaSpigot start - allow operations on the world owned by this tick lane
++    public static void catchOp(String reason, World world)
++    {
++        if (Thread.currentThread() == MinecraftServer.getServer().primaryThread) {
++            return;
++        }
++        if (ParallelWorldTickManager.isParallelWorldTickThread()) {
++            if (world instanceof WorldServer && ParallelWorldTickManager.isTickingWorld((WorldServer) world)) {
++                return;
++            }
++            throw new IllegalStateException("World tick worker cannot access another world during " + reason + "!");
++        }
++        if (enabled) {
++            throw new IllegalStateException("Asynchronous " + reason + "!");
++        }
++    }
++    // PandaSpigot end
+ }

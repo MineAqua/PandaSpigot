@@ -5,18 +5,18 @@ Subject: [PATCH] MASpigot Publish PandaSpigot-Server to MineAqua Reposilite
 
 
 diff --git a/build.gradle.kts b/build.gradle.kts
-index e9df20a48afde91bc88c653be4db02a17d4c475b..ee4ecaf4068c81d5c9aab64451334f16d617c828 100644
+index 5fd93af71de1c39690c5335b94b9cb2b62af14d1..400396401637ca0e14b126b3fde0d52d07c529a0 100644
 --- a/build.gradle.kts
 +++ b/build.gradle.kts
 @@ -1,6 +1,7 @@
  plugins {
      id("pandaspigot.conventions")
-     id("com.gradleup.shadow") version "9.4.1"
+     id("com.gradleup.shadow") version "9.6.1"
 +    `maven-publish`
  }
  
  val minecraftVersion = "1_8_R3"
-@@ -157,3 +158,56 @@ tasks {
+@@ -169,3 +170,56 @@ tasks {
          dependsOn(named("remap"))
      }
  }

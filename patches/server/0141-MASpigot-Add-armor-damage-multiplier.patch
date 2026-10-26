@@ -6,12 +6,12 @@ Subject: [PATCH] MASpigot Add armor damage multiplier
 Adds a reduceArmorDamage world option (default false) and an armorDamageMultiplier world option (default 1.0). When reduceArmorDamage is enabled, armor durability damage taken by players is scaled by 4.0 / armorDamageMultiplier instead of the vanilla flat divide-by-4; the multiplier has no effect while reduceArmorDamage is disabled.
 
 diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
-index fc00a5f67c5a6b2642c23834da1bef31338e2f07..d18af288085fe6bab3f378d6269b3d4b97314aba 100644
+index f8a434abfe92d31e390b70788805128fd1769a9f..dc4c74ea1a4afb70f3b8fb2b734d09d5d1e4247c 100644
 --- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
 +++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotWorldConfig.java
-@@ -50,6 +50,17 @@ public class PandaSpigotWorldConfig {
-         public double extraVertical = 0.1;
-     }
+@@ -44,6 +44,17 @@ public class PandaSpigotWorldConfig {
+             "By default, this is true (vanilla behaviour)")
+     public boolean randomArrowTrajectory = true;
  
 +    @Comment("When enabled, armor durability damage taken by players is scaled by\n" +
 +            "'armorDamageMultiplier' instead of vanilla armor damage.\n" +

@@ -70,10 +70,10 @@ index b24ea8a2d8ef1a69cf629162dbc74925462cecc2..b9e752f5d4814fac19dc47760331d370
              public boolean a(Entity entity) {
                  return entity.ae();
 diff --git a/src/main/java/net/minecraft/server/WorldServer.java b/src/main/java/net/minecraft/server/WorldServer.java
-index 098d9a8e10b6409a9e0d5bc1226fcfd8b29e13be..00be23c4220a65b00f1633c39caaa4212dd7f5c6 100644
+index fa64dcafc3ccb2d4c2dcfc00a5aea2c3e6cd8719..18a55984e9b214ef7c124e4d340c08e3096c0b45 100644
 --- a/src/main/java/net/minecraft/server/WorldServer.java
 +++ b/src/main/java/net/minecraft/server/WorldServer.java
-@@ -213,7 +213,7 @@ public class WorldServer extends World implements IAsyncTaskHandler {
+@@ -213,7 +213,7 @@ public class WorldServer extends World /*implements IAsyncTaskHandler*/ { // Pan
  
          this.worldProvider.m().b();
          boolean timeNeedsSync = false; // PandaSpigot - Wakeup Time Sync
@@ -82,7 +82,7 @@ index 098d9a8e10b6409a9e0d5bc1226fcfd8b29e13be..00be23c4220a65b00f1633c39caaa421
              if (this.getGameRules().getBoolean("doDaylightCycle")) {
                  long i = this.worldData.getDayTime() + 24000L;
  
-@@ -252,23 +252,33 @@ public class WorldServer extends World implements IAsyncTaskHandler {
+@@ -252,23 +252,33 @@ public class WorldServer extends World /*implements IAsyncTaskHandler*/ { // Pan
  
          timings.doChunkUnload.stopTiming(); // Spigot
          this.methodProfiler.c("tickPending");
@@ -126,7 +126,7 @@ index 098d9a8e10b6409a9e0d5bc1226fcfd8b29e13be..00be23c4220a65b00f1633c39caaa421
          this.methodProfiler.c("portalForcer");
          timings.doPortalForcer.startTiming(); // Spigot
          this.Q.a(this.getTime());
-@@ -296,6 +306,8 @@ public class WorldServer extends World implements IAsyncTaskHandler {
+@@ -296,6 +306,8 @@ public class WorldServer extends World /*implements IAsyncTaskHandler*/ { // Pan
      }
  
      public void everyoneSleeping() {
