@@ -1,0 +1,233 @@
+From b3649a569ac8d28f63e848830a57ac60aad3754f Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 23:07:43 -0300
+Subject: [PATCH] PandaSpigot: share pre-encoded multi-block changes
+
+---
+ .../server/PacketPlayOutMultiBlockChange.java | 96 +++++++++++++++++++
+ .../PacketPlayOutMultiBlockChangeTest.java    | 69 +++++++++++++
+ 2 files changed, 165 insertions(+)
+ create mode 100644 src/test/java/net/minecraft/server/PacketPlayOutMultiBlockChangeTest.java
+
+diff --git a/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java b/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java
+index 8e8bd739a..1e634bb1b 100644
+--- a/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java
++++ b/src/main/java/net/minecraft/server/PacketPlayOutMultiBlockChange.java
+@@ -1,11 +1,15 @@
+ package net.minecraft.server;
+ 
++import io.netty.buffer.ByteBuf;
++import io.netty.buffer.Unpooled;
+ import java.io.IOException;
++import java.util.Arrays;
+ 
+ public class PacketPlayOutMultiBlockChange implements Packet<PacketListenerPlayOut> {
+ 
+     private ChunkCoordIntPair a;
+     private PacketPlayOutMultiBlockChange.MultiBlockChangeInfo[] b;
++    private volatile SharedChanges sharedChanges;
+ 
+     public PacketPlayOutMultiBlockChange() {}
+ 
+@@ -29,17 +33,41 @@ public class PacketPlayOutMultiBlockChange implements Packet<PacketListenerPlayO
+     }
+ 
+     public MultiBlockChangeInfo[] getMultiBlockChangeInfos() {
++        if (this.b == null && this.sharedChanges != null) {
++            synchronized (this) {
++                if (this.b == null && this.sharedChanges != null) {
++                    SharedChanges changes = this.sharedChanges;
++                    MultiBlockChangeInfo[] infos = new MultiBlockChangeInfo[changes.size()];
++                    for (int i = 0; i < infos.length; ++i) {
++                        infos[i] = this.new MultiBlockChangeInfo(changes.getPackedPosition(i), changes.getBlockData(i));
++                    }
++                    this.b = infos;
++                    this.sharedChanges = null;
++                }
++            }
++        }
+         return this.b;
+     }
+ 
+     public void setMultiBlockChangeInfos(MultiBlockChangeInfo[] infos) {
+         this.b = infos;
++        this.sharedChanges = null;
++    }
++
++    public SharedChanges getSharedChanges() {
++        return this.sharedChanges;
++    }
++
++    public void setSharedChanges(SharedChanges changes) {
++        this.b = null;
++        this.sharedChanges = changes;
+     }
+     // MASpigot end
+ 
+     @Override
+     public void a(PacketDataSerializer packetdataserializer) throws IOException {
+         this.a = new ChunkCoordIntPair(packetdataserializer.readInt(), packetdataserializer.readInt());
++        this.sharedChanges = null;
+         this.b = new PacketPlayOutMultiBlockChange.MultiBlockChangeInfo[packetdataserializer.e()];
+ 
+         for (int i = 0; i < this.b.length; ++i) {
+@@ -52,6 +80,13 @@ public class PacketPlayOutMultiBlockChange implements Packet<PacketListenerPlayO
+     public void b(PacketDataSerializer packetdataserializer) throws IOException {
+         packetdataserializer.writeInt(this.a.x);
+         packetdataserializer.writeInt(this.a.z);
++
++        SharedChanges changes = this.sharedChanges;
++        if (changes != null) {
++            packetdataserializer.writeBytes(changes.encoded);
++            return;
++        }
++
+         packetdataserializer.b(this.b.length);
+ 
+         for (PacketPlayOutMultiBlockChange.MultiBlockChangeInfo packetplayoutmultiblockchange_multiblockchangeinfo : this.b) {
+@@ -65,6 +100,67 @@ public class PacketPlayOutMultiBlockChange implements Packet<PacketListenerPlayO
+         packetlistenerplayout.a(this);
+     }
+ 
++    /** Immutable packet body shared by cage packets with identical block changes. */
++    public static final class SharedChanges {
++
++        private final short[] packedPositions;
++        private final IBlockData[] blockData;
++        private final byte[] encoded;
++        private final int hashCode;
++
++        public SharedChanges(short[] packedPositions, IBlockData[] blockData) {
++            if (packedPositions == null || blockData == null || packedPositions.length != blockData.length) {
++                throw new IllegalArgumentException("Block positions and states must have the same length");
++            }
++
++            this.packedPositions = packedPositions.clone();
++            this.blockData = blockData.clone();
++
++            ByteBuf buffer = Unpooled.buffer();
++            try {
++                PacketDataSerializer serializer = new PacketDataSerializer(buffer);
++                serializer.b(this.packedPositions.length);
++                for (int i = 0; i < this.packedPositions.length; ++i) {
++                    if (this.blockData[i] == null) {
++                        throw new IllegalArgumentException("Block state at index " + i + " is null");
++                    }
++                    serializer.writeShort(this.packedPositions[i]);
++                    serializer.b(Block.d.b(this.blockData[i]));
++                }
++
++                this.encoded = new byte[buffer.readableBytes()];
++                buffer.getBytes(buffer.readerIndex(), this.encoded);
++            } finally {
++                buffer.release();
++            }
++            this.hashCode = Arrays.hashCode(this.encoded);
++        }
++
++        public int size() {
++            return this.packedPositions.length;
++        }
++
++        public short getPackedPosition(int index) {
++            return this.packedPositions[index];
++        }
++
++        public IBlockData getBlockData(int index) {
++            return this.blockData[index];
++        }
++
++        @Override
++        public boolean equals(Object other) {
++            if (this == other) return true;
++            if (!(other instanceof SharedChanges)) return false;
++            return Arrays.equals(this.encoded, ((SharedChanges) other).encoded);
++        }
++
++        @Override
++        public int hashCode() {
++            return this.hashCode;
++        }
++    }
++
+     public class MultiBlockChangeInfo {
+ 
+         private final short b;
+diff --git a/src/test/java/net/minecraft/server/PacketPlayOutMultiBlockChangeTest.java b/src/test/java/net/minecraft/server/PacketPlayOutMultiBlockChangeTest.java
+new file mode 100644
+index 000000000..ebb261d78
+--- /dev/null
++++ b/src/test/java/net/minecraft/server/PacketPlayOutMultiBlockChangeTest.java
+@@ -0,0 +1,69 @@
++package net.minecraft.server;
++
++import static org.junit.Assert.assertArrayEquals;
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertNotSame;
++import static org.junit.Assert.assertNull;
++
++import io.netty.buffer.ByteBuf;
++import io.netty.buffer.Unpooled;
++import java.io.IOException;
++import org.bukkit.support.AbstractTestingBase;
++import org.junit.Test;
++
++public class PacketPlayOutMultiBlockChangeTest extends AbstractTestingBase {
++
++    @Test
++    public void sharedPayloadMatchesLegacyPacketAndCanMaterializeInfos() throws IOException {
++        short[] positions = {
++                (short) ((3 << 12) | (7 << 8) | 64),
++                (short) ((4 << 12) | (8 << 8) | 65),
++                (short) ((5 << 12) | (9 << 8) | 66)
++        };
++        IBlockData[] states = {
++                Blocks.STONE.getBlockData(),
++                Blocks.DIRT.getBlockData(),
++                Blocks.REDSTONE_BLOCK.getBlockData()
++        };
++        ChunkCoordIntPair chunk = new ChunkCoordIntPair(-12, 27);
++
++        PacketPlayOutMultiBlockChange legacy = new PacketPlayOutMultiBlockChange();
++        legacy.setChunkCoordIntPair(chunk);
++        PacketPlayOutMultiBlockChange.MultiBlockChangeInfo[] infos =
++                new PacketPlayOutMultiBlockChange.MultiBlockChangeInfo[positions.length];
++        for (int i = 0; i < positions.length; ++i) {
++            infos[i] = legacy.new MultiBlockChangeInfo(positions[i], states[i]);
++        }
++        legacy.setMultiBlockChangeInfos(infos);
++
++        PacketPlayOutMultiBlockChange optimized = new PacketPlayOutMultiBlockChange();
++        optimized.setChunkCoordIntPair(chunk);
++        PacketPlayOutMultiBlockChange.SharedChanges shared =
++                new PacketPlayOutMultiBlockChange.SharedChanges(positions, states);
++        optimized.setSharedChanges(shared);
++
++        assertArrayEquals(serialize(legacy), serialize(optimized));
++        assertEquals(shared, new PacketPlayOutMultiBlockChange.SharedChanges(positions, states));
++        assertEquals(shared.hashCode(), new PacketPlayOutMultiBlockChange.SharedChanges(positions, states).hashCode());
++
++        PacketPlayOutMultiBlockChange.MultiBlockChangeInfo[] materialized = optimized.getMultiBlockChangeInfos();
++        assertNotSame(infos, materialized);
++        assertEquals(chunk.a(3, 64, 7), materialized[0].a());
++        assertEquals(states[1], materialized[1].c());
++        assertEquals(states[2], materialized[2].c());
++        assertNull(optimized.getSharedChanges());
++        assertArrayEquals(serialize(legacy), serialize(optimized));
++    }
++
++    private static byte[] serialize(PacketPlayOutMultiBlockChange packet) throws IOException {
++        ByteBuf buffer = Unpooled.buffer();
++        try {
++            packet.b(new PacketDataSerializer(buffer));
++            byte[] bytes = new byte[buffer.readableBytes()];
++            buffer.getBytes(buffer.readerIndex(), bytes);
++            return bytes;
++        } finally {
++            buffer.release();
++        }
++    }
++}
+-- 
+2.53.0.windows.2
+
