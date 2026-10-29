@@ -1,11 +1,30 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 2e52dab2793f819fdd915dbd8ff1955ea63c2c7d Mon Sep 17 00:00:00 2001
 From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
-Date: Mon, 26 Oct 2026 18:49:33 -0300
+Date: Tue, 27 Oct 2026 23:30:09 -0300
 Subject: [PATCH] PandaSpigot: add parallel world ticking
 
+---
+ .../pandaspigot/config/PandaSpigotConfig.java |  15 ++
+ src/main/java/net/minecraft/server/Block.java |   4 +-
+ .../java/net/minecraft/server/Entity.java     |   7 +
+ .../net/minecraft/server/EntityLiving.java    |   2 +-
+ .../net/minecraft/server/EntityTracker.java   |   4 +-
+ .../minecraft/server/EntityTrackerEntry.java  |   4 +-
+ .../net/minecraft/server/MinecraftServer.java | 152 +++++------
+ .../server/ParallelWorldTickManager.java      | 237 ++++++++++++++++++
+ .../java/net/minecraft/server/PlayerList.java |   3 +
+ src/main/java/net/minecraft/server/World.java |   8 +-
+ .../org/bukkit/craftbukkit/CraftServer.java   |  11 +
+ .../org/bukkit/craftbukkit/CraftWorld.java    |   6 +-
+ .../craftbukkit/entity/CraftEntity.java       |   3 +
+ .../craftbukkit/entity/CraftPlayer.java       |  10 +-
+ .../craftbukkit/scheduler/CraftFuture.java    |   4 +
+ src/main/java/org/spigotmc/AsyncCatcher.java  |  21 ++
+ 16 files changed, 388 insertions(+), 103 deletions(-)
+ create mode 100644 src/main/java/net/minecraft/server/ParallelWorldTickManager.java
 
 diff --git a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
-index d8245c6ae0309ff4bb2676a818a596db9923d118..9303563885451cdf7dd1de10eea16a08baa86c58 100644
+index d8245c6ae..930356388 100644
 --- a/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
 +++ b/src/main/java/com/hpfxd/pandaspigot/config/PandaSpigotConfig.java
 @@ -275,4 +275,19 @@ public class PandaSpigotConfig {
@@ -28,8 +47,26 @@ index d8245c6ae0309ff4bb2676a818a596db9923d118..9303563885451cdf7dd1de10eea16a08
 +    public int parallelWorldTickingThreads = 2;
 +    // PandaSpigot end
  }
+diff --git a/src/main/java/net/minecraft/server/Block.java b/src/main/java/net/minecraft/server/Block.java
+index a784e04a0..0db423c1f 100644
+--- a/src/main/java/net/minecraft/server/Block.java
++++ b/src/main/java/net/minecraft/server/Block.java
+@@ -320,11 +320,11 @@ public class Block {
+     }
+ 
+     public void onPlace(World world, BlockPosition blockposition, IBlockData iblockdata) {
+-        org.spigotmc.AsyncCatcher.catchOp( "block onPlace"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("block onPlace", world); // Spigot, PandaSpigot - parallel world ticking
+     }
+ 
+     public void remove(World world, BlockPosition blockposition, IBlockData iblockdata) {
+-        org.spigotmc.AsyncCatcher.catchOp( "block remove"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("block remove", world); // Spigot, PandaSpigot - parallel world ticking
+     }
+ 
+     public int a(Random random) {
 diff --git a/src/main/java/net/minecraft/server/Entity.java b/src/main/java/net/minecraft/server/Entity.java
-index e2b6f0a788fe56cacbadb457a7c65b3412a1b528..2a554313030724f2c186abae6bf21180d6f8104d 100644
+index e2b6f0a78..2a5543130 100644
 --- a/src/main/java/net/minecraft/server/Entity.java
 +++ b/src/main/java/net/minecraft/server/Entity.java
 @@ -1982,6 +1982,10 @@ public abstract class Entity implements ICommandListener {
@@ -53,8 +90,21 @@ index e2b6f0a788fe56cacbadb457a7c65b3412a1b528..2a554313030724f2c186abae6bf21180
              int i = worldserver1.dimension;
              // CraftBukkit end
  
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index a3ac468d9..5090347ef 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -588,7 +588,7 @@ public abstract class EntityLiving extends Entity {
+     }
+ 
+     public void addEffect(MobEffect mobeffect, EffectAddReason reason) {
+-        org.spigotmc.AsyncCatcher.catchOp( "effect add"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("effect add", this.world); // Spigot, PandaSpigot - parallel world ticking
+         if (this.d(mobeffect)) {
+             if (this.effects.containsKey(Integer.valueOf(mobeffect.getEffectId()))) {
+                 // SportBukkit start - fire event
 diff --git a/src/main/java/net/minecraft/server/EntityTracker.java b/src/main/java/net/minecraft/server/EntityTracker.java
-index 3863b02c63403011320a798c8c5f9d4d35491634..34c80264ffb3d6d8ad6d8151583f7aabe0c1b69b 100644
+index 3863b02c6..34c80264f 100644
 --- a/src/main/java/net/minecraft/server/EntityTracker.java
 +++ b/src/main/java/net/minecraft/server/EntityTracker.java
 @@ -94,7 +94,7 @@ public class EntityTracker {
@@ -75,8 +125,30 @@ index 3863b02c63403011320a798c8c5f9d4d35491634..34c80264ffb3d6d8ad6d8151583f7aab
          if (entity instanceof EntityPlayer) {
              EntityPlayer entityplayer = (EntityPlayer) entity;
              Iterator iterator = this.c.iterator();
+diff --git a/src/main/java/net/minecraft/server/EntityTrackerEntry.java b/src/main/java/net/minecraft/server/EntityTrackerEntry.java
+index 0b90b6f30..831d7998b 100644
+--- a/src/main/java/net/minecraft/server/EntityTrackerEntry.java
++++ b/src/main/java/net/minecraft/server/EntityTrackerEntry.java
+@@ -334,7 +334,7 @@ public class EntityTrackerEntry {
+     }
+ 
+     public void updatePlayer(EntityPlayer entityplayer) {
+-        org.spigotmc.AsyncCatcher.catchOp( "player tracker update"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("player tracker update", this.tracker.world); // Spigot, PandaSpigot - parallel world ticking
+         if (entityplayer != this.tracker) {
+             if (this.c(entityplayer)) {
+                 if (!this.trackedPlayers.contains(entityplayer) && (this.e(entityplayer) || this.tracker.attachedToPlayer)) {
+@@ -565,7 +565,7 @@ public class EntityTrackerEntry {
+     }
+ 
+     public void clear(EntityPlayer entityplayer) {
+-        org.spigotmc.AsyncCatcher.catchOp( "player tracker clear"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("player tracker clear", this.tracker.world); // Spigot, PandaSpigot - parallel world ticking
+         if (this.trackedPlayers.contains(entityplayer)) {
+             this.trackedPlayers.remove(entityplayer);
+             entityplayer.d(this.tracker);
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index a132a29f82bc20da22ee04622fe1df513cabea70..e4ac469ae7743fa1a314eddd70623d7e2397a4ea 100644
+index a132a29f8..e4ac469ae 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -116,6 +116,7 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
@@ -269,7 +341,7 @@ index a132a29f82bc20da22ee04622fe1df513cabea70..e4ac469ae7743fa1a314eddd70623d7e
      }
 diff --git a/src/main/java/net/minecraft/server/ParallelWorldTickManager.java b/src/main/java/net/minecraft/server/ParallelWorldTickManager.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..4946e498119871457684f27ab15b1d870a171910
+index 000000000..4946e4981
 --- /dev/null
 +++ b/src/main/java/net/minecraft/server/ParallelWorldTickManager.java
 @@ -0,0 +1,237 @@
@@ -511,7 +583,7 @@ index 0000000000000000000000000000000000000000..4946e498119871457684f27ab15b1d87
 +    }
 +}
 diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
-index 10b56ef322cb0d70be1ff5a439f80216694c36a0..ea4c32c09349068ee3d7473750e4cf730f857c0d 100644
+index 10b56ef32..ea4c32c09 100644
 --- a/src/main/java/net/minecraft/server/PlayerList.java
 +++ b/src/main/java/net/minecraft/server/PlayerList.java
 @@ -667,6 +667,9 @@ public abstract class PlayerList {
@@ -525,7 +597,7 @@ index 10b56ef322cb0d70be1ff5a439f80216694c36a0..ea4c32c09349068ee3d7473750e4cf73
          if (entityplayer.dimension < CraftWorld.CUSTOM_DIMENSION_OFFSET) { // plugins must specify exit from custom Bukkit worlds
              // only target existing worlds (compensate for allow-nether/allow-end as false)
 diff --git a/src/main/java/net/minecraft/server/World.java b/src/main/java/net/minecraft/server/World.java
-index 522c63e7f884a8b2202b111c81df9b54384703d5..e19d9ebb17a8a9a0bc2a249b13cb2e33b8a804f1 100644
+index 522c63e7f..e19d9ebb1 100644
 --- a/src/main/java/net/minecraft/server/World.java
 +++ b/src/main/java/net/minecraft/server/World.java
 @@ -387,6 +387,7 @@ public abstract class World implements IBlockAccess {
@@ -572,7 +644,7 @@ index 522c63e7f884a8b2202b111c81df9b54384703d5..e19d9ebb17a8a9a0bc2a249b13cb2e33
          // this.entityList.addAll(collection);
          Iterator iterator = collection.iterator();
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-index 4d8c4058f370cfb3c090d7482dad70fc1493bd28..1a970e57d58f966e6a4d3f2ee3b1ae1a95867a98 100644
+index 4d8c4058f..1a970e57d 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 @@ -676,6 +676,9 @@ public final class CraftServer implements Server {
@@ -608,7 +680,7 @@ index 4d8c4058f370cfb3c090d7482dad70fc1493bd28..1a970e57d58f966e6a4d3f2ee3b1ae1a
              return false;
          }
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
-index da8164a0e797f0e747810b6b208af2e9d78e08ba..571ae920f3dd6b219e1ba60aefe4844fd6917b8a 100644
+index da8164a0e..571ae920f 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
 @@ -186,7 +186,7 @@ public class CraftWorld implements World {
@@ -639,7 +711,7 @@ index da8164a0e797f0e747810b6b208af2e9d78e08ba..571ae920f3dd6b219e1ba60aefe4844f
          if (generate) {
              // Use the default variant of loadChunk when generate == true.
 diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
-index 4f9179908e2cd74d6170a614a0971ef0f9ddaafa..74ca061f42d123c59dab2ea3bd3d6d25ae27d12e 100644
+index 4f9179908..74ca061f4 100644
 --- a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
 +++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
 @@ -246,6 +246,9 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
@@ -653,7 +725,7 @@ index 4f9179908e2cd74d6170a614a0971ef0f9ddaafa..74ca061f42d123c59dab2ea3bd3d6d25
            return true;
          }
 diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
-index d9dc34910cfd9b294e1cb4159655cbeba490295f..fc45d94a2c9a0bf3589076938ee32b42c8bb0b36 100644
+index d9dc34910..fc45d94a2 100644
 --- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
 @@ -653,9 +653,6 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
@@ -681,7 +753,7 @@ index d9dc34910cfd9b294e1cb4159655cbeba490295f..fc45d94a2c9a0bf3589076938ee32b42
          if (getHandle().activeContainer != getHandle().defaultContainer) {
              getHandle().closeInventory();
 diff --git a/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java b/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java
-index 1baec564c03b2d1320390de9c21dc8b1c2762614..b45f58934c9c91642d25f72ef94b54bd79ce921b 100644
+index 1baec564c..b45f58934 100644
 --- a/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java
 +++ b/src/main/java/org/bukkit/craftbukkit/scheduler/CraftFuture.java
 @@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
@@ -703,7 +775,7 @@ index 1baec564c03b2d1320390de9c21dc8b1c2762614..b45f58934c9c91642d25f72ef94b54bd
          long period = this.getPeriod();
          long timestamp = timeout > 0 ? System.currentTimeMillis() : 0l;
 diff --git a/src/main/java/org/spigotmc/AsyncCatcher.java b/src/main/java/org/spigotmc/AsyncCatcher.java
-index 4b3aa85c9750d5a09f5261950c40e9bda3304776..2a93852e39c4a9a2db3c3b79442c9bff8b65f00c 100644
+index 4b3aa85c9..2a93852e3 100644
 --- a/src/main/java/org/spigotmc/AsyncCatcher.java
 +++ b/src/main/java/org/spigotmc/AsyncCatcher.java
 @@ -1,6 +1,9 @@
@@ -739,3 +811,6 @@ index 4b3aa85c9750d5a09f5261950c40e9bda3304776..2a93852e39c4a9a2db3c3b79442c9bff
 +    }
 +    // PandaSpigot end
  }
+-- 
+2.53.0.windows.2
+
