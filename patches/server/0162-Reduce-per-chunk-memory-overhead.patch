@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 13:45:03 -0300
+Subject: [PATCH] Reduce per-chunk memory overhead
+
+
+diff --git a/src/main/java/net/minecraft/server/Chunk.java b/src/main/java/net/minecraft/server/Chunk.java
+index bdbda3e61c86dc298862fe560942a08fdc57e3a5..b6704034f97892f344f98fa4abd0979d52f4c1c7 100644
+--- a/src/main/java/net/minecraft/server/Chunk.java
++++ b/src/main/java/net/minecraft/server/Chunk.java
+@@ -52,7 +52,7 @@ public class Chunk {
+     private long u;
+     private int v;
+     private ConcurrentLinkedQueue<BlockPosition> w;
+-    protected gnu.trove.map.hash.TObjectIntHashMap<Class> entityCount = new gnu.trove.map.hash.TObjectIntHashMap<Class>(); // Spigot
++    protected gnu.trove.map.hash.TObjectIntHashMap<Class> entityCount = new gnu.trove.map.hash.TObjectIntHashMap<Class>(4); // Spigot, PandaSpigot - four creature categories
+     // PaperSpigot start - Asynchronous light updates
+     public AtomicInteger pendingLightUpdates = new AtomicInteger();
+     public long lightUpdateTime;
+diff --git a/src/main/java/net/minecraft/server/PlayerChunkMap.java b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+index be9aaf6a418653a715c41d76df5a4f30c077dc1c..6054bb5d641426ef3776bf7bd88c7d4e4cee8f38 100644
+--- a/src/main/java/net/minecraft/server/PlayerChunkMap.java
++++ b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+@@ -394,18 +394,19 @@ public class PlayerChunkMap {
+ 
+         private final List<EntityPlayer> b = Lists.newArrayList();
+         private final ChunkCoordIntPair location;
+-        private short[] dirtyBlocks = new short[64];
++        private short[] dirtyBlocks; // PandaSpigot - allocate only after a block update
+         private int dirtyCount;
+         private int f;
+         private long g;
+         public Chunk chunk; // PandaSpigot - Alternative Chunk Ticking Selection
+ 
+         // CraftBukkit start - add fields
+-        private final HashMap<EntityPlayer, Runnable> players = new HashMap<EntityPlayer, Runnable>();
++        private HashMap<EntityPlayer, Runnable> players = new HashMap<EntityPlayer, Runnable>(); // PandaSpigot - pending chunk load callbacks only
+         private boolean loaded = false;
+         private Runnable loadedRunnable = new Runnable() {
+             public void run() {
+                 PlayerChunk.this.loaded = true;
++                PlayerChunk.this.players = new HashMap<EntityPlayer, Runnable>(); // PandaSpigot - release callbacks for a loaded chunk
+                 PlayerChunk.this.chunk = PlayerChunkMap.this.a().chunkProviderServer.getChunkIfLoaded(PlayerChunk.this.location.x, PlayerChunk.this.location.z); // PandaSpigot - Alternative Chunk Ticking Selection
+             }
+         };
+@@ -439,7 +440,7 @@ public class PlayerChunkMap {
+                     PlayerChunkMap.this.a().chunkProviderServer.getChunkAt(this.location.x, this.location.z, playerRunnable);
+                 }
+ 
+-                this.players.put(entityplayer, playerRunnable);
++                if (playerRunnable != null) this.players.put(entityplayer, playerRunnable); // PandaSpigot - don't retain loaded players here
+                 // CraftBukkit end
+             }
+         }
+@@ -507,6 +508,7 @@ public class PlayerChunkMap {
+ 
+             this.f |= 1 << (j >> 4);
+             if (this.dirtyCount < 64) {
++                if (this.dirtyBlocks == null) this.dirtyBlocks = new short[64]; // PandaSpigot - lazy dirty block buffer
+                 short short0 = (short) (i << 12 | k << 8 | j);
+ 
+                 for (int l = 0; l < this.dirtyCount; ++l) {

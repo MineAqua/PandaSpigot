@@ -73,11 +73,11 @@ dependencies {
 
 ## Requirements
 To work with PandaSpigot, you will need:
-- JDK 17 or higher
+- JDK 21 or higher
 - Git
 - Bash
 
-🧩 Although JDK 17 is required for building, the compiled JAR remains fully compatible with Java 8.
+On JDK 25, compact object headers can be enabled with `-XX:+UseCompactObjectHeaders`. Measure this with your server's plugin set before using it in production.
 
 ### Panda Bash build script
 The `panda` Bash script is the entry point for setup, patching, and builds.
