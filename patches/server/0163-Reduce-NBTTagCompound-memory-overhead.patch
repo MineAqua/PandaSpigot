@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 16:00:00 -0300
+Subject: [PATCH] Reduce NBTTagCompound memory overhead
+
+
+diff --git a/src/main/java/net/minecraft/server/NBTTagCompound.java b/src/main/java/net/minecraft/server/NBTTagCompound.java
+index 1baf396f1c1bc369f778e1b3aa83e3eecaad4bd3..884495e439a1a35233798bdc52371adb6dacc2e6 100644
+--- a/src/main/java/net/minecraft/server/NBTTagCompound.java
++++ b/src/main/java/net/minecraft/server/NBTTagCompound.java
+@@ -1,9 +1,9 @@
+ package net.minecraft.server;
+ 
+-import com.google.common.collect.Maps;
+ import java.io.DataInput;
+ import java.io.DataOutput;
+ import java.io.IOException;
++import java.util.HashMap;
+ import java.util.Map;
+ import java.util.Map.Entry;
+ import java.util.Set;
+@@ -11,10 +11,14 @@ import java.util.concurrent.Callable;
+ 
+ public class NBTTagCompound extends NBTBase {
+ 
+-    private Map<String, NBTBase> map = Maps.newHashMap();
++    private Map<String, NBTBase> map = new HashMap<String, NBTBase>(8, 0.8F); // PandaSpigot - Paper/Spottedleaf: smaller maps for typical compounds, without a fastutil dependency
+ 
+     public NBTTagCompound() {}
+ 
++    private NBTTagCompound(int expectedSize) { // PandaSpigot - presize cloned compounds
++        this.map = new HashMap<String, NBTBase>(Math.max(8, (int) (expectedSize / 0.8F) + 1), 0.8F);
++    }
++
+     @Override
+     void write(DataOutput dataoutput) throws IOException {
+         for (String s : this.map.keySet()) {
+@@ -283,7 +287,7 @@ public class NBTTagCompound extends NBTBase {
+ 
+     @Override
+     public NBTBase clone() {
+-        NBTTagCompound nbttagcompound = new NBTTagCompound();
++        NBTTagCompound nbttagcompound = new NBTTagCompound(this.map.size()); // PandaSpigot - presize cloned compounds
+ 
+         for (String s : this.map.keySet()) {
+             nbttagcompound.set(s, ((NBTBase) this.map.get(s)).clone());

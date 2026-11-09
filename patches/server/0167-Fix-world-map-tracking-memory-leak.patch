@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 16:00:00 -0300
+Subject: [PATCH] Fix world map tracking memory leak
+
+
+diff --git a/src/main/java/net/minecraft/server/PersistentCollection.java b/src/main/java/net/minecraft/server/PersistentCollection.java
+index 6459594c7f58c48ff04f0576309cc462720faf73..a73f38321fe9010c54d78f2b2eee032431506d26 100644
+--- a/src/main/java/net/minecraft/server/PersistentCollection.java
++++ b/src/main/java/net/minecraft/server/PersistentCollection.java
+@@ -187,4 +187,14 @@ public class PersistentCollection {
+             return oshort.shortValue();
+         }
+     }
++
++    // PandaSpigot start - FlamePaper/Minetick: release players from every world map
++    public void removeTrackedPlayer(EntityHuman entityhuman) {
++        for (PersistentBase persistentbase : this.c) {
++            if (persistentbase instanceof WorldMap) {
++                ((WorldMap) persistentbase).untrackPlayer(entityhuman);
++            }
++        }
++    }
++    // PandaSpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/WorldMap.java b/src/main/java/net/minecraft/server/WorldMap.java
+index 162b3a31a68802f6bd62b14ec636df5ef0ad7ae9..edc419988448a2f0f0404760aaa2e0206afbba98 100644
+--- a/src/main/java/net/minecraft/server/WorldMap.java
++++ b/src/main/java/net/minecraft/server/WorldMap.java
+@@ -313,4 +313,17 @@ public class WorldMap extends PersistentBase {
+ 
+         }
+     }
++
++    // PandaSpigot start - FlamePaper/Minetick: release removed players and their trackers
++    public void untrackPlayer(EntityHuman entityhuman) {
++        if (this.i.remove(entityhuman) != null) {
++            Iterator<WorldMap.WorldMapHumanTracker> iterator = this.g.iterator();
++            while (iterator.hasNext()) {
++                if (iterator.next().trackee == entityhuman) {
++                    iterator.remove();
++                }
++            }
++        }
++    }
++    // PandaSpigot end
+ }
+diff --git a/src/main/java/net/minecraft/server/World.java b/src/main/java/net/minecraft/server/World.java
+index e19d9ebb17a8a9a0bc2a249b13cb2e33b8a804f1..88ae1f38d5b5d641ed54fd4611bbc69418f38ba3 100644
+--- a/src/main/java/net/minecraft/server/World.java
++++ b/src/main/java/net/minecraft/server/World.java
+@@ -1222,23 +1222,7 @@ public abstract class World implements IBlockAccess {
+         entity.die();
+         if (entity instanceof EntityHuman) {
+             this.players.remove(entity);
+-            // Spigot start
+-            for ( Object o : worldMaps.c )
+-            {
+-                if ( o instanceof WorldMap )
+-                {
+-                    WorldMap map = (WorldMap) o;
+-                    map.i.remove( entity );
+-                    for ( Iterator<WorldMap.WorldMapHumanTracker> iter = (Iterator<WorldMap.WorldMapHumanTracker>) map.g.iterator(); iter.hasNext(); )
+-                    {
+-                        if ( iter.next().trackee == entity )
+-                        {
+-                            iter.remove();
+-                        }
+-                    }
+-                }
+-            }
+-            // Spigot end
++            this.worldMaps.removeTrackedPlayer((EntityHuman) entity); // PandaSpigot - FlamePaper/Minetick: release map trackers
+             this.everyoneSleeping();
+             this.b(entity);
+         }
+@@ -1250,6 +1234,7 @@ public abstract class World implements IBlockAccess {
+         entity.die();
+         if (entity instanceof EntityHuman) {
+             this.players.remove(entity);
++            this.worldMaps.removeTrackedPlayer((EntityHuman) entity); // PandaSpigot - FlamePaper/Minetick: release map trackers on world transfers
+             this.everyoneSleeping();
+         }
+ 

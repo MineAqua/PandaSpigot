@@ -156,3 +156,20 @@ Plugin compatibility is important, and we wish to minimize any breakage.
 Please do not open pull requests for features that you cannot justify the existence of,
 and the added maintenance costs of that come along with them. If you are thinking of
 adding a feature that may be controversial, please open an issue first!
+
+## Procedencia de los parches
+
+La autoría original se conserva en las cabeceras de los archivos de `patches/`. WindSpigot se utilizó como referencia de integración para los siguientes parches; las adaptaciones y correcciones realizadas al incorporarlos son de **MineAqua**:
+
+| Parche | Procedencia |
+| --- | --- |
+| `0163-Reduce-NBTTagCompound-memory-overhead` | Paper/Spottedleaf, mediante WindSpigot; adaptado por MineAqua para usar `HashMap` sin añadir fastutil. |
+| `0164-Fix-entity-and-command-block-memory-leaks` | KigPaper-0039/0128, mediante NachoSpigot y WindSpigot; conserva la API de daño con referencias débiles. |
+| `0165-Fix-EnchantmentManager-memory-leaks` | KigPaper-0129 y FlamePaper-0105/Minetick. |
+| `0166-Fix-entity-target-and-crafting-view-memory-leaks` | KigPaper-0138/0161, con correcciones de null-safety de WindSpigot y MineAqua. |
+| `0167-Fix-world-map-tracking-memory-leak` | FlamePaper-0105/Minetick. |
+| `0168-Optimize-hopper-inventory-entity-lookup` | FlamePaper-0034; MineAqua corrige la comprobación para usar el contador de entidades con inventario y no perder minecarts. |
+| `0169-Avoid-EnumDirection-array-allocations` | NachoSpigot-0004/0005, por Heath Logan Campbell. |
+| `0170-Reuse-empty-int-arrays` | NachoSpigot, por Heath Logan Campbell. |
+
+Los parches con prefijo `MASpigot`, el ticking paralelo de mundos, los cambios multibloque pre-codificados y la reducción de memoria por chunk (`0160`–`0162`) son desarrollos propios de **MineAqua**. Los demás parches pertenecen a PandaSpigot, Paper, Spigot o sus respectivos autores, identificados en cada archivo de parche.

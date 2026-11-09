@@ -1,0 +1,158 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 16:00:00 -0300
+Subject: [PATCH] Fix entity target and crafting view memory leaks
+
+
+diff --git a/src/main/java/net/minecraft/server/EntityInsentient.java b/src/main/java/net/minecraft/server/EntityInsentient.java
+index 0b6427cc5d0bbb81217f3da261c2e0f4a4fdca3a..3e43ab19628c2b4e5531d42c799901195d775218 100644
+--- a/src/main/java/net/minecraft/server/EntityInsentient.java
++++ b/src/main/java/net/minecraft/server/EntityInsentient.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.server;
+ 
++import java.lang.ref.WeakReference; // PandaSpigot - KigPaper: avoid retaining removed targets
+ import java.util.Iterator;
+ import java.util.List;
+ import java.util.UUID;
+@@ -24,7 +25,7 @@ public abstract class EntityInsentient extends EntityLiving {
+     protected NavigationAbstract navigation;
+     public PathfinderGoalSelector goalSelector;
+     public PathfinderGoalSelector targetSelector;
+-    private EntityLiving goalTarget;
++    private WeakReference<EntityLiving> goalTarget; // PandaSpigot - KigPaper: avoid retaining removed targets
+     private EntitySenses bk;
+     private ItemStack[] equipment = new ItemStack[5];
+     public float[] dropChances = new float[5];
+@@ -85,7 +86,7 @@ public abstract class EntityInsentient extends EntityLiving {
+     }
+ 
+     public EntityLiving getGoalTarget() {
+-        return this.goalTarget;
++        return this.goalTarget == null ? null : this.goalTarget.get(); // PandaSpigot - KigPaper
+     }
+ 
+     public void setGoalTarget(EntityLiving entityliving) {
+@@ -118,7 +119,7 @@ public abstract class EntityInsentient extends EntityLiving {
+                 entityliving = null;
+             }
+         }
+-        this.goalTarget = entityliving;
++        this.goalTarget = entityliving == null ? null : new WeakReference<EntityLiving>(entityliving); // PandaSpigot - KigPaper: avoid retaining removed targets
+         // CraftBukkit end
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/PathfinderGoalSwell.java b/src/main/java/net/minecraft/server/PathfinderGoalSwell.java
+index c8eebf8cb76e9683a8ce362af3e45691da0b0e8e..9bd3543e6b49ee7169176a9d07ff8a99e59ca0ff 100644
+--- a/src/main/java/net/minecraft/server/PathfinderGoalSwell.java
++++ b/src/main/java/net/minecraft/server/PathfinderGoalSwell.java
+@@ -3,7 +3,6 @@ package net.minecraft.server;
+ public class PathfinderGoalSwell extends PathfinderGoal {
+ 
+     EntityCreeper a;
+-    EntityLiving b;
+ 
+     public PathfinderGoalSwell(EntityCreeper entitycreeper) {
+         this.a = entitycreeper;
+@@ -18,19 +17,17 @@ public class PathfinderGoalSwell extends PathfinderGoal {
+ 
+     public void c() {
+         this.a.getNavigation().n();
+-        this.b = this.a.getGoalTarget();
+     }
+ 
+-    public void d() {
+-        this.b = null;
+-    }
++    public void d() {}
+ 
+     public void e() {
+-        if (this.b == null) {
++        EntityLiving target = this.a.getGoalTarget(); // PandaSpigot - KigPaper: don't retain the target in this goal
++        if (target == null) {
+             this.a.a(-1);
+-        } else if (this.a.h(this.b) > 49.0D) {
++        } else if (this.a.h(target) > 49.0D) {
+             this.a.a(-1);
+-        } else if (!this.a.getEntitySenses().a(this.b)) {
++        } else if (!this.a.getEntitySenses().a(target)) {
+             this.a.a(-1);
+         } else {
+             this.a.a(1);
+diff --git a/src/main/java/net/minecraft/server/ContainerWorkbench.java b/src/main/java/net/minecraft/server/ContainerWorkbench.java
+index 78df2db46005cc9eeb7090a75aee55c02948075f..1dfa1091813e243b2357b86f2339f27f72c4a9d1 100644
+--- a/src/main/java/net/minecraft/server/ContainerWorkbench.java
++++ b/src/main/java/net/minecraft/server/ContainerWorkbench.java
+@@ -9,7 +9,7 @@ public class ContainerWorkbench extends Container {
+ 
+     public InventoryCrafting craftInventory; // CraftBukkit - move initialization into constructor
+     public IInventory resultInventory; // CraftBukkit - move initialization into constructor
+-    private World g;
++    public World g; // PandaSpigot - KigPaper: used to release stale crafting views on world unload
+     private BlockPosition h;
+     // CraftBukkit start
+     private CraftInventoryView bukkitEntity = null;
+diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
+index ea4c32c09349068ee3d7473750e4cf730f857c0d..6b0d4f24639bc78f300d2c3fa6cf1acce86ead59 100644
+--- a/src/main/java/net/minecraft/server/PlayerList.java
++++ b/src/main/java/net/minecraft/server/PlayerList.java
+@@ -22,6 +22,7 @@ import org.apache.logging.log4j.Logger;
+ import org.bukkit.craftbukkit.CraftServer;
+ import org.bukkit.craftbukkit.CraftWorld;
+ import org.bukkit.craftbukkit.chunkio.ChunkIOExecutor;
++import org.bukkit.craftbukkit.inventory.CraftInventoryView; // PandaSpigot - KigPaper: release stale crafting views
+ 
+ import org.bukkit.Bukkit;
+ import org.bukkit.Location;
+@@ -373,7 +374,8 @@ public abstract class PlayerList {
+         // CraftBukkit start - Quitting must be before we do final save of data, in case plugins need to modify it
+         org.bukkit.craftbukkit.event.CraftEventFactory.handleInventoryCloseEvent(entityplayer);
+ 
+-        PlayerQuitEvent playerQuitEvent = new PlayerQuitEvent(cserver.getPlayer(entityplayer), net.kyori.adventure.text.Component.translatable("multiplayer.player.left").arguments(net.kyori.adventure.text.Component.text(entityplayer.getName())).color(net.kyori.adventure.text.format.NamedTextColor.YELLOW)); // PandaSpigot - Adventure
++        Player bukkit = cserver.getPlayer(entityplayer); // PandaSpigot - KigPaper: reuse for crafting view cleanup
++        PlayerQuitEvent playerQuitEvent = new PlayerQuitEvent(bukkit, net.kyori.adventure.text.Component.translatable("multiplayer.player.left").arguments(net.kyori.adventure.text.Component.text(entityplayer.getName())).color(net.kyori.adventure.text.format.NamedTextColor.YELLOW)); // PandaSpigot - Adventure
+         cserver.getPluginManager().callEvent(playerQuitEvent);
+         entityplayer.getBukkitEntity().disconnect(playerQuitEvent.getQuitMessage());
+         // CraftBukkit end
+@@ -416,6 +418,14 @@ public abstract class PlayerList {
+ 
+         ChunkIOExecutor.adjustPoolSize(this.getPlayerCount()); // CraftBukkit
+ 
++        // PandaSpigot start - KigPaper: don't retain a disconnected player through their crafting view
++        CraftingManager craftingManager = CraftingManager.getInstance();
++        CraftInventoryView lastView = (CraftInventoryView) craftingManager.lastCraftView;
++        if (lastView != null && lastView.getHandle() instanceof ContainerPlayer && lastView.getPlayer() == bukkit) {
++            craftingManager.lastCraftView = null;
++        }
++        // PandaSpigot end
++
+         return playerQuitEvent.quitMessage(); // CraftBukkit // PandaSpigot - Adventure
+     }
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index 1a970e57d58f966e6a4d3f2ee3b1ae1a95867a98..b39ee2f888530b8fcd6b0852f9b87a33aa97921b 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -53,6 +53,7 @@ import org.bukkit.craftbukkit.generator.CraftChunkData;
+ import org.bukkit.craftbukkit.help.SimpleHelpMap;
+ import org.bukkit.craftbukkit.inventory.CraftFurnaceRecipe;
+ import org.bukkit.craftbukkit.inventory.CraftInventoryCustom;
++import org.bukkit.craftbukkit.inventory.CraftInventoryView; // PandaSpigot - KigPaper: release stale crafting views
+ import org.bukkit.craftbukkit.inventory.CraftItemFactory;
+ import org.bukkit.craftbukkit.inventory.CraftRecipe;
+ import org.bukkit.craftbukkit.inventory.CraftShapedRecipe;
+@@ -1054,6 +1055,14 @@ public final class CraftServer implements Server {
+         worlds.remove(world.getName().toLowerCase());
+         console.worlds.remove(console.worlds.indexOf(handle));
+ 
++        // PandaSpigot start - KigPaper: don't retain an unloaded world through its last crafting view
++        CraftingManager craftingManager = CraftingManager.getInstance();
++        CraftInventoryView lastView = (CraftInventoryView) craftingManager.lastCraftView;
++        if (lastView != null && lastView.getHandle() instanceof ContainerWorkbench && ((ContainerWorkbench) lastView.getHandle()).g == handle) {
++            craftingManager.lastCraftView = null;
++        }
++        // PandaSpigot end
++
+         File parentFolder = world.getWorldFolder().getAbsoluteFile();
+ 
+         // Synchronized because access to RegionFileCache.a is guarded by this lock.

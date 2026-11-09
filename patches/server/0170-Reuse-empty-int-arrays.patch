@@ -1,0 +1,648 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 16:00:00 -0300
+Subject: [PATCH] Reuse empty int arrays
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index 571ae920f3dd6b219e1ba60aefe4844fd6917b8a..87ef6a135f4ebaa52f90b8cc8abcf5032280920c 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+@@ -1505,7 +1505,7 @@ public class CraftWorld implements World {
+                 }
+                 if ( extra == null )
+                 {
+-                    extra = new int[0];
++                    extra = com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY;
+                 }
+                 packet = new PacketPlayOutWorldParticles( particle, true, (float) location.getX(), (float) location.getY(), (float) location.getZ(), offsetX, offsetY, offsetZ, speed, particleCount, extra );
+             }
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index fc45d94a2c9a0bf3589076938ee32b42c8bb0b36..565775e91efef4da5204ee750264e2cc4e2ce0ce 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -1732,7 +1732,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+                 }
+                 if ( extra == null )
+                 {
+-                    extra = new int[0];
++                    extra = com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY;
+                 }
+                 packet = new PacketPlayOutWorldParticles( particle, true, (float) location.getX(), (float) location.getY(), (float) location.getZ(), offsetX, offsetY, offsetZ, speed, particleCount, extra );
+             }
+diff --git a/src/main/java/net/minecraft/server/BlockDragonEgg.java b/src/main/java/net/minecraft/server/BlockDragonEgg.java
+index 76a627246261712a105ee9fee3005eb02eab802c..15c0e5d4ec4ee791e9c4f3f60ed9e3a5bfd9e44f 100644
+--- a/src/main/java/net/minecraft/server/BlockDragonEgg.java
++++ b/src/main/java/net/minecraft/server/BlockDragonEgg.java
+@@ -88,7 +88,7 @@ public class BlockDragonEgg extends Block {
+                             double d2 = (double) blockposition1.getY() + (double) (blockposition.getY() - blockposition1.getY()) * d0 + world.random.nextDouble() * 1.0D - 0.5D;
+                             double d3 = (double) blockposition1.getZ() + (double) (blockposition.getZ() - blockposition1.getZ()) * d0 + (world.random.nextDouble() - 0.5D) * 1.0D + 0.5D;
+ 
+-                            world.addParticle(EnumParticle.PORTAL, d1, d2, d3, (double) f, (double) f1, (double) f2, new int[0]);
++                            world.addParticle(EnumParticle.PORTAL, d1, d2, d3, (double) f, (double) f1, (double) f2, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                         }
+                     } else {
+                         world.setTypeAndData(blockposition1, iblockdata, 2);
+diff --git a/src/main/java/net/minecraft/server/BlockFluids.java b/src/main/java/net/minecraft/server/BlockFluids.java
+index db73f5d9cc85579037c3d95509a1227946cb08d6..d1692695e79fb87037e7dcbd075f43f0aa9fbaf9 100644
+--- a/src/main/java/net/minecraft/server/BlockFluids.java
++++ b/src/main/java/net/minecraft/server/BlockFluids.java
+@@ -173,7 +174,7 @@ public abstract class BlockFluids extends Block {
+         world.makeSound(d0 + 0.5D, d1 + 0.5D, d2 + 0.5D, "random.fizz", 0.5F, 2.6F + (world.random.nextFloat() - world.random.nextFloat()) * 0.8F);
+ 
+         for (int i = 0; i < 8; ++i) {
+-            world.addParticle(EnumParticle.SMOKE_LARGE, d0 + Math.random(), d1 + 1.2D, d2 + Math.random(), 0.0D, 0.0D, 0.0D, new int[0]);
++            world.addParticle(EnumParticle.SMOKE_LARGE, d0 + Math.random(), d1 + 1.2D, d2 + Math.random(), 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+     }
+diff --git a/src/main/java/net/minecraft/server/BlockPumpkin.java b/src/main/java/net/minecraft/server/BlockPumpkin.java
+index 12958201ab533266860e858c61dad2bbe4182570..e3d9c40c8ffa405d4faf3bded5e73932b0d4aa66 100644
+--- a/src/main/java/net/minecraft/server/BlockPumpkin.java
++++ b/src/main/java/net/minecraft/server/BlockPumpkin.java
+@@ -66,7 +66,7 @@ public class BlockPumpkin extends BlockDirectional {
+                 blockList.updateList();
+ 
+             for (j = 0; j < 120; ++j) {
+-                world.addParticle(EnumParticle.SNOW_SHOVEL, (double) blockposition1.getX() + world.random.nextDouble(), (double) blockposition1.getY() + world.random.nextDouble() * 2.5D, (double) blockposition1.getZ() + world.random.nextDouble(), 0.0D, 0.0D, 0.0D, new int[0]);
++                world.addParticle(EnumParticle.SNOW_SHOVEL, (double) blockposition1.getX() + world.random.nextDouble(), (double) blockposition1.getY() + world.random.nextDouble() * 2.5D, (double) blockposition1.getZ() + world.random.nextDouble(), 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+ 
+             for (j = 0; j < this.getDetectorSnowGolem().b(); ++j) {
+@@ -98,7 +98,7 @@ public class BlockPumpkin extends BlockDirectional {
+                 blockList.updateList();
+ 
+             for (j = 0; j < 120; ++j) {
+-                world.addParticle(EnumParticle.SNOWBALL, (double) blockposition2.getX() + world.random.nextDouble(), (double) blockposition2.getY() + world.random.nextDouble() * 3.9D, (double) blockposition2.getZ() + world.random.nextDouble(), 0.0D, 0.0D, 0.0D, new int[0]);
++                world.addParticle(EnumParticle.SNOWBALL, (double) blockposition2.getX() + world.random.nextDouble(), (double) blockposition2.getY() + world.random.nextDouble() * 3.9D, (double) blockposition2.getZ() + world.random.nextDouble(), 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+ 
+             for (j = 0; j < this.getDetectorIronGolem().c(); ++j) {
+diff --git a/src/main/java/net/minecraft/server/BlockRedstoneOre.java b/src/main/java/net/minecraft/server/BlockRedstoneOre.java
+index 119354ade7ec559def181ff1f449bd1d524c4e89..1811d521363fff2e834dedd06e2882d004c16d44 100644
+--- a/src/main/java/net/minecraft/server/BlockRedstoneOre.java
++++ b/src/main/java/net/minecraft/server/BlockRedstoneOre.java
+@@ -148,7 +148,7 @@ public class BlockRedstoneOre extends Block {
+             }
+ 
+             if (d1 < (double) blockposition.getX() || d1 > (double) (blockposition.getX() + 1) || d2 < 0.0D || d2 > (double) (blockposition.getY() + 1) || d3 < (double) blockposition.getZ() || d3 > (double) (blockposition.getZ() + 1)) {
+-                world.addParticle(EnumParticle.REDSTONE, d1, d2, d3, 0.0D, 0.0D, 0.0D, new int[0]);
++                world.addParticle(EnumParticle.REDSTONE, d1, d2, d3, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/BlockRedstoneTorch.java b/src/main/java/net/minecraft/server/BlockRedstoneTorch.java
+index 99d7320be7fd5eb2814c1ca5758f61de56174e65..072fdafa38ab5a7a85c7c88e9470e409343ed5be 100644
+--- a/src/main/java/net/minecraft/server/BlockRedstoneTorch.java
++++ b/src/main/java/net/minecraft/server/BlockRedstoneTorch.java
+@@ -156,7 +156,7 @@ public class BlockRedstoneTorch extends BlockTorch {
+                         double d1 = (double) blockposition.getY() + random.nextDouble() * 0.6D + 0.2D;
+                         double d2 = (double) blockposition.getZ() + random.nextDouble() * 0.6D + 0.2D;
+ 
+-                        world.addParticle(EnumParticle.SMOKE_NORMAL, d0, d1, d2, 0.0D, 0.0D, 0.0D, new int[0]);
++                        world.addParticle(EnumParticle.SMOKE_NORMAL, d0, d1, d2, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                     }
+ 
+                     world.a(blockposition, world.getType(blockposition).getBlock(), 160);
+diff --git a/src/main/java/net/minecraft/server/BlockSkull.java b/src/main/java/net/minecraft/server/BlockSkull.java
+index 95a1049032ae268665093ed958613b23a3f3abbb..4323d017bb0a0c528403d22fa61e51ec8f7658ac 100644
+--- a/src/main/java/net/minecraft/server/BlockSkull.java
++++ b/src/main/java/net/minecraft/server/BlockSkull.java
+@@ -208,7 +208,7 @@ public class BlockSkull extends BlockContainer {
+                 int k;
+ 
+                 for (k = 0; k < 120; ++k) {
+-                    world.addParticle(EnumParticle.SNOWBALL, (double) blockposition1.getX() + world.random.nextDouble(), (double) (blockposition1.getY() - 2) + world.random.nextDouble() * 3.9D, (double) blockposition1.getZ() + world.random.nextDouble(), 0.0D, 0.0D, 0.0D, new int[0]);
++                    world.addParticle(EnumParticle.SNOWBALL, (double) blockposition1.getX() + world.random.nextDouble(), (double) (blockposition1.getY() - 2) + world.random.nextDouble() * 3.9D, (double) blockposition1.getZ() + world.random.nextDouble(), 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+ 
+                 for (k = 0; k < shapedetector.c(); ++k) {
+diff --git a/src/main/java/net/minecraft/server/Entity.java b/src/main/java/net/minecraft/server/Entity.java
+index 2a554313030724f2c186abae6bf21180d6f8104d..2047dfb5012c5597b2614f3d624100a5277c7e89 100644
+--- a/src/main/java/net/minecraft/server/Entity.java
++++ b/src/main/java/net/minecraft/server/Entity.java
+@@ -950,13 +950,13 @@ public abstract class Entity implements ICommandListener {
+         for (i = 0; (float) i < 1.0F + this.width * 20.0F; ++i) {
+             f2 = (this.random.nextFloat() * 2.0F - 1.0F) * this.width;
+             f3 = (this.random.nextFloat() * 2.0F - 1.0F) * this.width;
+-            this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX + (double) f2, (double) (f1 + 1.0F), this.locZ + (double) f3, this.motX, this.motY - (double) (this.random.nextFloat() * 0.2F), this.motZ, new int[0]);
++            this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX + (double) f2, (double) (f1 + 1.0F), this.locZ + (double) f3, this.motX, this.motY - (double) (this.random.nextFloat() * 0.2F), this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+         for (i = 0; (float) i < 1.0F + this.width * 20.0F; ++i) {
+             f2 = (this.random.nextFloat() * 2.0F - 1.0F) * this.width;
+             f3 = (this.random.nextFloat() * 2.0F - 1.0F) * this.width;
+-            this.world.addParticle(EnumParticle.WATER_SPLASH, this.locX + (double) f2, (double) (f1 + 1.0F), this.locZ + (double) f3, this.motX, this.motY, this.motZ, new int[0]);
++            this.world.addParticle(EnumParticle.WATER_SPLASH, this.locX + (double) f2, (double) (f1 + 1.0F), this.locZ + (double) f3, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+     }
+diff --git a/src/main/java/net/minecraft/server/EntityAgeable.java b/src/main/java/net/minecraft/server/EntityAgeable.java
+index 09d43358538422ddc52e51e12488e1080b8392e9..3cb04e3339be377e9f019f7cc03d445b577418cb 100644
+--- a/src/main/java/net/minecraft/server/EntityAgeable.java
++++ b/src/main/java/net/minecraft/server/EntityAgeable.java
+@@ -140,7 +140,7 @@ public abstract class EntityAgeable extends EntityCreature {
+         if (this.world.isClientSide || ageLocked) { // CraftBukkit
+             if (this.c > 0) {
+                 if (this.c % 4 == 0) {
+-                    this.world.addParticle(EnumParticle.VILLAGER_HAPPY, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, this.locY + 0.5D + (double) (this.random.nextFloat() * this.length), this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, 0.0D, 0.0D, 0.0D, new int[0]);
++                    this.world.addParticle(EnumParticle.VILLAGER_HAPPY, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, this.locY + 0.5D + (double) (this.random.nextFloat() * this.length), this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+ 
+                 --this.c;
+diff --git a/src/main/java/net/minecraft/server/EntityAnimal.java b/src/main/java/net/minecraft/server/EntityAnimal.java
+index a8315297b3b258cf23fb83056a531efd2759da05..7b25a2d5be4df2deefb92a4f9968de9f29a75964 100644
+--- a/src/main/java/net/minecraft/server/EntityAnimal.java
++++ b/src/main/java/net/minecraft/server/EntityAnimal.java
+@@ -32,7 +32,7 @@ public abstract class EntityAnimal extends EntityAgeable implements IAnimal {
+                 double d1 = this.random.nextGaussian() * 0.02D;
+                 double d2 = this.random.nextGaussian() * 0.02D;
+ 
+-                this.world.addParticle(EnumParticle.HEART, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, this.locY + 0.5D + (double) (this.random.nextFloat() * this.length), this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, d0, d1, d2, new int[0]);
++                this.world.addParticle(EnumParticle.HEART, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, this.locY + 0.5D + (double) (this.random.nextFloat() * this.length), this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, d0, d1, d2, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityArrow.java b/src/main/java/net/minecraft/server/EntityArrow.java
+index 1cfea4ba17c64ff6534d6898408ed9ddd3eb6fd6..651c4844dd6ed50c36ece073c08df01b50298efb 100644
+--- a/src/main/java/net/minecraft/server/EntityArrow.java
++++ b/src/main/java/net/minecraft/server/EntityArrow.java
+@@ -334,7 +334,7 @@ public class EntityArrow extends Entity implements IProjectile {
+ 
+             if (this.isCritical()) {
+                 for (j = 0; j < 4; ++j) {
+-                    this.world.addParticle(EnumParticle.CRIT, this.locX + this.motX * (double) j / 4.0D, this.locY + this.motY * (double) j / 4.0D, this.locZ + this.motZ * (double) j / 4.0D, -this.motX, -this.motY + 0.2D, -this.motZ, new int[0]);
++                    this.world.addParticle(EnumParticle.CRIT, this.locX + this.motX * (double) j / 4.0D, this.locY + this.motY * (double) j / 4.0D, this.locZ + this.motZ * (double) j / 4.0D, -this.motX, -this.motY + 0.2D, -this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+             }
+ 
+@@ -368,7 +368,7 @@ public class EntityArrow extends Entity implements IProjectile {
+             if (this.V()) {
+                 for (int l = 0; l < 4; ++l) {
+                     f3 = 0.25F;
+-                    this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX - this.motX * (double) f3, this.locY - this.motY * (double) f3, this.locZ - this.motZ * (double) f3, this.motX, this.motY, this.motZ, new int[0]);
++                    this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX - this.motX * (double) f3, this.locY - this.motY * (double) f3, this.locZ - this.motZ * (double) f3, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+ 
+                 f4 = 0.6F;
+diff --git a/src/main/java/net/minecraft/server/EntityBoat.java b/src/main/java/net/minecraft/server/EntityBoat.java
+index c042345bc6a2ffb646b205b49fbd65b241264723..8cb9ecf7d5e8423dc58a3a6d6eb4c153aab269d0 100644
+--- a/src/main/java/net/minecraft/server/EntityBoat.java
++++ b/src/main/java/net/minecraft/server/EntityBoat.java
+@@ -202,11 +202,11 @@ public class EntityBoat extends Entity {
+                 if (this.random.nextBoolean()) {
+                     d8 = this.locX - d4 * d6 * 0.8D + d5 * d7;
+                     d9 = this.locZ - d5 * d6 * 0.8D - d4 * d7;
+-                    this.world.addParticle(EnumParticle.WATER_SPLASH, d8, this.locY - 0.125D, d9, this.motX, this.motY, this.motZ, new int[0]);
++                    this.world.addParticle(EnumParticle.WATER_SPLASH, d8, this.locY - 0.125D, d9, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 } else {
+                     d8 = this.locX + d4 + d5 * d6 * 0.7D;
+                     d9 = this.locZ + d5 - d4 * d6 * 0.7D;
+-                    this.world.addParticle(EnumParticle.WATER_SPLASH, d8, this.locY - 0.125D, d9, this.motX, this.motY, this.motZ, new int[0]);
++                    this.world.addParticle(EnumParticle.WATER_SPLASH, d8, this.locY - 0.125D, d9, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+             }
+         }
+diff --git a/src/main/java/net/minecraft/server/EntityEnderDragon.java b/src/main/java/net/minecraft/server/EntityEnderDragon.java
+index d246ae749ea49be9e07ff5ac6abd3bbf14782a6b..c2b05356c3335f1362496aa38fe7634fa301b36f 100644
+--- a/src/main/java/net/minecraft/server/EntityEnderDragon.java
++++ b/src/main/java/net/minecraft/server/EntityEnderDragon.java
+@@ -99,7 +99,7 @@ public class EntityEnderDragon extends EntityInsentient implements IComplex, IMo
+             f = (this.random.nextFloat() - 0.5F) * 8.0F;
+             f1 = (this.random.nextFloat() - 0.5F) * 4.0F;
+             f2 = (this.random.nextFloat() - 0.5F) * 8.0F;
+-            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, this.locX + (double) f, this.locY + 2.0D + (double) f1, this.locZ + (double) f2, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, this.locX + (double) f, this.locY + 2.0D + (double) f1, this.locZ + (double) f2, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         } else {
+             this.n();
+             f = 0.2F / (MathHelper.sqrt(this.motX * this.motX + this.motZ * this.motZ) * 10.0F + 1.0F);
+@@ -502,7 +502,7 @@ public class EntityEnderDragon extends EntityInsentient implements IComplex, IMo
+             double d1 = axisalignedbb.b + (axisalignedbb.e - axisalignedbb.b) * (double) this.random.nextFloat();
+             double d2 = axisalignedbb.c + (axisalignedbb.f - axisalignedbb.c) * (double) this.random.nextFloat();
+ 
+-            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, d0, d1, d2, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, d0, d1, d2, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+         return flag;
+@@ -552,7 +552,7 @@ public class EntityEnderDragon extends EntityInsentient implements IComplex, IMo
+             float f1 = (this.random.nextFloat() - 0.5F) * 4.0F;
+             float f2 = (this.random.nextFloat() - 0.5F) * 8.0F;
+ 
+-            this.world.addParticle(EnumParticle.EXPLOSION_HUGE, this.locX + (double) f, this.locY + 2.0D + (double) f1, this.locZ + (double) f2, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.EXPLOSION_HUGE, this.locX + (double) f, this.locY + 2.0D + (double) f1, this.locZ + (double) f2, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+         boolean flag = this.world.getGameRules().getBoolean("doMobLoot");
+diff --git a/src/main/java/net/minecraft/server/EntityEnderman.java b/src/main/java/net/minecraft/server/EntityEnderman.java
+index b1565f7ddb2b379ac6c62ff30f7535736b24afc2..5f7517b68328dc5443b9b785f8dcd4c471347f2f 100644
+--- a/src/main/java/net/minecraft/server/EntityEnderman.java
++++ b/src/main/java/net/minecraft/server/EntityEnderman.java
+@@ -107,7 +107,7 @@ public class EntityEnderman extends EntityMonster {
+     public void m() {
+         if (this.world.isClientSide) {
+             for (int i = 0; i < 2; ++i) {
+-                this.world.addParticle(EnumParticle.PORTAL, this.locX + (this.random.nextDouble() - 0.5D) * (double) this.width, this.locY + this.random.nextDouble() * (double) this.length - 0.25D, this.locZ + (this.random.nextDouble() - 0.5D) * (double) this.width, (this.random.nextDouble() - 0.5D) * 2.0D, -this.random.nextDouble(), (this.random.nextDouble() - 0.5D) * 2.0D, new int[0]);
++                this.world.addParticle(EnumParticle.PORTAL, this.locX + (this.random.nextDouble() - 0.5D) * (double) this.width, this.locY + this.random.nextDouble() * (double) this.length - 0.25D, this.locZ + (this.random.nextDouble() - 0.5D) * (double) this.width, (this.random.nextDouble() - 0.5D) * 2.0D, -this.random.nextDouble(), (this.random.nextDouble() - 0.5D) * 2.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         }
+ 
+@@ -217,7 +217,7 @@ public class EntityEnderman extends EntityMonster {
+                 double d8 = d4 + (this.locY - d4) * d6 + this.random.nextDouble() * (double) this.length;
+                 double d9 = d5 + (this.locZ - d5) * d6 + (this.random.nextDouble() - 0.5D) * (double) this.width * 2.0D;
+ 
+-                this.world.addParticle(EnumParticle.PORTAL, d7, d8, d9, (double) f, (double) f1, (double) f2, new int[0]);
++                this.world.addParticle(EnumParticle.PORTAL, d7, d8, d9, (double) f, (double) f1, (double) f2, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+ 
+             this.world.makeSound(d3, d4, d5, "mob.endermen.portal", 1.0F, 1.0F);
+diff --git a/src/main/java/net/minecraft/server/EntityEnderPearl.java b/src/main/java/net/minecraft/server/EntityEnderPearl.java
+index 7e765b5536a4015bb1bbdbde48f2370a6e8f83b6..409da16593f38e5c93c0ea785fb24945890db808 100644
+--- a/src/main/java/net/minecraft/server/EntityEnderPearl.java
++++ b/src/main/java/net/minecraft/server/EntityEnderPearl.java
+@@ -75,7 +75,7 @@ public class EntityEnderPearl extends EntityProjectile {
+         // PaperSpigot end
+ 
+         for (int i = 0; i < 32; ++i) {
+-            this.world.addParticle(EnumParticle.PORTAL, this.locX, this.locY + this.random.nextDouble() * 2.0D, this.locZ, this.random.nextGaussian(), 0.0D, this.random.nextGaussian(), new int[0]);
++            this.world.addParticle(EnumParticle.PORTAL, this.locX, this.locY + this.random.nextDouble() * 2.0D, this.locZ, this.random.nextGaussian(), 0.0D, this.random.nextGaussian(), com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+         if (!this.world.isClientSide) {
+diff --git a/src/main/java/net/minecraft/server/EntityFireball.java b/src/main/java/net/minecraft/server/EntityFireball.java
+index 0a3a5d9370a56056abdbd33e7bf5993b81c5d9cc..4a86eaac862c98c884927702abc157b505b8b9ca 100644
+--- a/src/main/java/net/minecraft/server/EntityFireball.java
++++ b/src/main/java/net/minecraft/server/EntityFireball.java
+@@ -176,7 +176,7 @@ public abstract class EntityFireball extends Entity {
+                 for (int j = 0; j < 4; ++j) {
+                     float f3 = 0.25F;
+ 
+-                    this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX - this.motX * (double) f3, this.locY - this.motY * (double) f3, this.locZ - this.motZ * (double) f3, this.motX, this.motY, this.motZ, new int[0]);
++                    this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX - this.motX * (double) f3, this.locY - this.motY * (double) f3, this.locZ - this.motZ * (double) f3, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+ 
+                 f2 = 0.8F;
+@@ -188,7 +188,7 @@ public abstract class EntityFireball extends Entity {
+             this.motX *= (double) f2;
+             this.motY *= (double) f2;
+             this.motZ *= (double) f2;
+-            this.world.addParticle(EnumParticle.SMOKE_NORMAL, this.locX, this.locY + 0.5D, this.locZ, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.SMOKE_NORMAL, this.locX, this.locY + 0.5D, this.locZ, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             this.setPosition(this.locX, this.locY, this.locZ);
+         }
+     }
+diff --git a/src/main/java/net/minecraft/server/EntityFireworks.java b/src/main/java/net/minecraft/server/EntityFireworks.java
+index d7be6c2680b16e70f6215ccafab239d57337f236..6bb53729c1619e68424c0a1111b6280ff0883744 100644
+--- a/src/main/java/net/minecraft/server/EntityFireworks.java
++++ b/src/main/java/net/minecraft/server/EntityFireworks.java
+@@ -83,7 +83,7 @@ public class EntityFireworks extends Entity {
+ 
+         ++this.ticksFlown;
+         if (this.world.isClientSide && this.ticksFlown % 2 < 2) {
+-            this.world.addParticle(EnumParticle.FIREWORKS_SPARK, this.locX, this.locY - 0.3D, this.locZ, this.random.nextGaussian() * 0.05D, -this.motY * 0.5D, this.random.nextGaussian() * 0.05D, new int[0]);
++            this.world.addParticle(EnumParticle.FIREWORKS_SPARK, this.locX, this.locY - 0.3D, this.locZ, this.random.nextGaussian() * 0.05D, -this.motY * 0.5D, this.random.nextGaussian() * 0.05D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+         if (!this.world.isClientSide && this.ticksFlown > this.expectedLifespan) {
+diff --git a/src/main/java/net/minecraft/server/EntityFishingHook.java b/src/main/java/net/minecraft/server/EntityFishingHook.java
+index aa96512e478de96fb1e8bd2224e77963247581a3..c9dd5e57ff49840d6d9109bdf2905f7af07cc9f3 100644
+--- a/src/main/java/net/minecraft/server/EntityFishingHook.java
++++ b/src/main/java/net/minecraft/server/EntityFishingHook.java
+@@ -318,8 +318,8 @@ public class EntityFishingHook extends Entity {
+                                 this.motY -= 0.20000000298023224D;
+                                 this.makeSound("random.splash", 0.25F, 1.0F + (this.random.nextFloat() - this.random.nextFloat()) * 0.4F);
+                                 f3 = (float) MathHelper.floor(this.getBoundingBox().b);
+-                                worldserver.a(EnumParticle.WATER_BUBBLE, this.locX, (double) (f3 + 1.0F), this.locZ, (int) (1.0F + this.width * 20.0F), (double) this.width, 0.0D, (double) this.width, 0.20000000298023224D, new int[0]);
+-                                worldserver.a(EnumParticle.WATER_WAKE, this.locX, (double) (f3 + 1.0F), this.locZ, (int) (1.0F + this.width * 20.0F), (double) this.width, 0.0D, (double) this.width, 0.20000000298023224D, new int[0]);
++                                worldserver.a(EnumParticle.WATER_BUBBLE, this.locX, (double) (f3 + 1.0F), this.locZ, (int) (1.0F + this.width * 20.0F), (double) this.width, 0.0D, (double) this.width, 0.20000000298023224D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
++                                worldserver.a(EnumParticle.WATER_WAKE, this.locX, (double) (f3 + 1.0F), this.locZ, (int) (1.0F + this.width * 20.0F), (double) this.width, 0.0D, (double) this.width, 0.20000000298023224D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                                 this.av = MathHelper.nextInt(this.random, 10, 30);
+                             } else {
+                                 this.ay = (float) ((double) this.ay + this.random.nextGaussian() * 4.0D);
+@@ -332,14 +332,14 @@ public class EntityFishingHook extends Entity {
+                                 block = worldserver.getType(new BlockPosition((int) d8, (int) d12 - 1, (int) d11)).getBlock();
+                                 if (block == Blocks.WATER || block == Blocks.FLOWING_WATER) {
+                                     if (this.random.nextFloat() < 0.15F) {
+-                                        worldserver.a(EnumParticle.WATER_BUBBLE, d8, d12 - 0.10000000149011612D, d11, 1, (double) f5, 0.1D, (double) f4, 0.0D, new int[0]);
++                                        worldserver.a(EnumParticle.WATER_BUBBLE, d8, d12 - 0.10000000149011612D, d11, 1, (double) f5, 0.1D, (double) f4, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                                     }
+ 
+                                     float f6 = f5 * 0.04F;
+                                     float f7 = f4 * 0.04F;
+ 
+-                                    worldserver.a(EnumParticle.WATER_WAKE, d8, d12, d11, 0, (double) f7, 0.01D, (double) (-f6), 1.0D, new int[0]);
+-                                    worldserver.a(EnumParticle.WATER_WAKE, d8, d12, d11, 0, (double) (-f7), 0.01D, (double) f6, 1.0D, new int[0]);
++                                    worldserver.a(EnumParticle.WATER_WAKE, d8, d12, d11, 0, (double) f7, 0.01D, (double) (-f6), 1.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
++                                    worldserver.a(EnumParticle.WATER_WAKE, d8, d12, d11, 0, (double) (-f7), 0.01D, (double) f6, 1.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                                 }
+                             }
+                         } else if (this.aw > 0) {
+@@ -361,7 +361,7 @@ public class EntityFishingHook extends Entity {
+                                 d11 = this.locZ + (double) (MathHelper.cos(f5) * f4 * 0.1F);
+                                 block = worldserver.getType(new BlockPosition((int) d8, (int) d12 - 1, (int) d11)).getBlock();
+                                 if (block == Blocks.WATER || block == Blocks.FLOWING_WATER) {
+-                                    worldserver.a(EnumParticle.WATER_SPLASH, d8, d12, d11, 2 + this.random.nextInt(2), 0.10000000149011612D, 0.0D, 0.10000000149011612D, 0.0D, new int[0]);
++                                    worldserver.a(EnumParticle.WATER_SPLASH, d8, d12, d11, 2 + this.random.nextInt(2), 0.10000000149011612D, 0.0D, 0.10000000149011612D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                                 }
+                             }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityInsentient.java b/src/main/java/net/minecraft/server/EntityInsentient.java
+index 0b6427cc5d0bbb81217f3da261c2e0f4a4fdca3a..3e43ab19628c2b4e5531d42c799901195d775218 100644
+--- a/src/main/java/net/minecraft/server/EntityInsentient.java
++++ b/src/main/java/net/minecraft/server/EntityInsentient.java
+@@ -182,7 +183,7 @@ public abstract class EntityInsentient extends EntityLiving {
+                 double d2 = this.random.nextGaussian() * 0.02D;
+                 double d3 = 10.0D;
+ 
+-                this.world.addParticle(EnumParticle.EXPLOSION_NORMAL, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width - d0 * d3, this.locY + (double) (this.random.nextFloat() * this.length) - d1 * d3, this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width - d2 * d3, d0, d1, d2, new int[0]);
++                this.world.addParticle(EnumParticle.EXPLOSION_NORMAL, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width - d0 * d3, this.locY + (double) (this.random.nextFloat() * this.length) - d1 * d3, this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width - d2 * d3, d0, d1, d2, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         } else {
+             this.world.broadcastEntityEffect(this, (byte) 20);
+diff --git a/src/main/java/net/minecraft/server/EntityLiving.java b/src/main/java/net/minecraft/server/EntityLiving.java
+index 5090347ef795393b756b04f8ac244f87ff71db62..36612448ec52fff8bee8545e0bd101efe8715a62 100644
+--- a/src/main/java/net/minecraft/server/EntityLiving.java
++++ b/src/main/java/net/minecraft/server/EntityLiving.java
+@@ -211,7 +211,7 @@ public abstract class EntityLiving extends Entity {
+                             float f1 = this.random.nextFloat() - this.random.nextFloat();
+                             float f2 = this.random.nextFloat() - this.random.nextFloat();
+ 
+-                            this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX + (double) f, this.locY + (double) f1, this.locZ + (double) f2, this.motX, this.motY, this.motZ, new int[0]);
++                            this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX + (double) f, this.locY + (double) f1, this.locZ + (double) f2, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                         }
+ 
+                         this.damageEntity(DamageSource.DROWN, 2.0F);
+@@ -312,7 +312,7 @@ public abstract class EntityLiving extends Entity {
+                 double d1 = this.random.nextGaussian() * 0.02D;
+                 double d2 = this.random.nextGaussian() * 0.02D;
+ 
+-                this.world.addParticle(EnumParticle.EXPLOSION_NORMAL, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, this.locY + (double) (this.random.nextFloat() * this.length), this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, d0, d1, d2, new int[0]);
++                this.world.addParticle(EnumParticle.EXPLOSION_NORMAL, this.locX + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, this.locY + (double) (this.random.nextFloat() * this.length), this.locZ + (double) (this.random.nextFloat() * this.width * 2.0F) - (double) this.width, d0, d1, d2, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         }
+ 
+@@ -528,7 +528,7 @@ public abstract class EntityLiving extends Entity {
+                 double d1 = (double) (i >> 8 & 255) / 255.0D;
+                 double d2 = (double) (i >> 0 & 255) / 255.0D;
+ 
+-                this.world.addParticle(flag ? EnumParticle.SPELL_MOB_AMBIENT : EnumParticle.SPELL_MOB, this.locX + (this.random.nextDouble() - 0.5D) * (double) this.width, this.locY + this.random.nextDouble() * (double) this.length, this.locZ + (this.random.nextDouble() - 0.5D) * (double) this.width, d0, d1, d2, new int[0]);
++                this.world.addParticle(flag ? EnumParticle.SPELL_MOB_AMBIENT : EnumParticle.SPELL_MOB, this.locX + (this.random.nextDouble() - 0.5D) * (double) this.width, this.locY + this.random.nextDouble() * (double) this.length, this.locZ + (this.random.nextDouble() - 0.5D) * (double) this.width, d0, d1, d2, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityMushroomCow.java b/src/main/java/net/minecraft/server/EntityMushroomCow.java
+index fef767c248ab7ce356ae403b25e466cb306bdd73..5a887346a95d9b973223625a49514d50659106b6 100644
+--- a/src/main/java/net/minecraft/server/EntityMushroomCow.java
++++ b/src/main/java/net/minecraft/server/EntityMushroomCow.java
+@@ -35,7 +35,7 @@ public class EntityMushroomCow extends EntityCow {
+             }
+             // CraftBukkit end
+             this.die();
+-            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, this.locX, this.locY + (double) (this.length / 2.0F), this.locZ, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, this.locX, this.locY + (double) (this.length / 2.0F), this.locZ, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             if (!this.world.isClientSide) {
+                 EntityCow entitycow = new EntityCow(this.world);
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityMinecartFurnace.java b/src/main/java/net/minecraft/server/EntityMinecartFurnace.java
+index 075d80e9c7867bd678c6bf28838a3fd89d2d8b90..a4f1f9965ff518975f2057eba5536cccd40211c9 100644
+--- a/src/main/java/net/minecraft/server/EntityMinecartFurnace.java
++++ b/src/main/java/net/minecraft/server/EntityMinecartFurnace.java
+@@ -35,7 +35,7 @@ public class EntityMinecartFurnace extends EntityMinecartAbstract {
+ 
+         this.i(this.c > 0);
+         if (this.j() && this.random.nextInt(4) == 0) {
+-            this.world.addParticle(EnumParticle.SMOKE_LARGE, this.locX, this.locY + 0.8D, this.locZ, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.SMOKE_LARGE, this.locX, this.locY + 0.8D, this.locZ, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+     }
+diff --git a/src/main/java/net/minecraft/server/EntityProjectile.java b/src/main/java/net/minecraft/server/EntityProjectile.java
+index fa69eafadea380aff012723f0c42ff345ec6b51b..7176bda0592ad1fc5d184bd5f83ee2e76576f24a 100644
+--- a/src/main/java/net/minecraft/server/EntityProjectile.java
++++ b/src/main/java/net/minecraft/server/EntityProjectile.java
+@@ -209,7 +209,7 @@ public abstract class EntityProjectile extends Entity implements IProjectile {
+             for (int j = 0; j < 4; ++j) {
+                 float f4 = 0.25F;
+ 
+-                this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX - this.motX * (double) f4, this.locY - this.motY * (double) f4, this.locZ - this.motZ * (double) f4, this.motX, this.motY, this.motZ, new int[0]);
++                this.world.addParticle(EnumParticle.WATER_BUBBLE, this.locX - this.motX * (double) f4, this.locY - this.motY * (double) f4, this.locZ - this.motZ * (double) f4, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+ 
+             f2 = 0.8F;
+diff --git a/src/main/java/net/minecraft/server/EntitySlime.java b/src/main/java/net/minecraft/server/EntitySlime.java
+index c927832b6d95694faa9b19e118cacecbabe1d04f..b3fe8eae3ffac1a25a180c020d04f129e8ffbf68 100644
+--- a/src/main/java/net/minecraft/server/EntitySlime.java
++++ b/src/main/java/net/minecraft/server/EntitySlime.java
+@@ -88,7 +88,7 @@ public class EntitySlime extends EntityInsentient implements IMonster {
+                 double d0 = this.locX + (double) f2;
+                 double d1 = this.locZ + (double) f3;
+ 
+-                world.addParticle(enumparticle, d0, this.getBoundingBox().b, d1, 0.0D, 0.0D, 0.0D, new int[0]);
++                world.addParticle(enumparticle, d0, this.getBoundingBox().b, d1, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+ 
+             if (this.cl()) {
+diff --git a/src/main/java/net/minecraft/server/EntityTNTPrimed.java b/src/main/java/net/minecraft/server/EntityTNTPrimed.java
+index 872d9659c20a8f6931e35f41c58f56efeacd9c03..b589c84c0c7bc87a4c60e4abc72c4413d64eee1d 100644
+--- a/src/main/java/net/minecraft/server/EntityTNTPrimed.java
++++ b/src/main/java/net/minecraft/server/EntityTNTPrimed.java
+@@ -90,7 +90,7 @@ public class EntityTNTPrimed extends Entity {
+             // CraftBukkit end
+         } else {
+             this.W();
+-            this.world.addParticle(EnumParticle.SMOKE_NORMAL, this.locX, this.locY + 0.5D, this.locZ, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.SMOKE_NORMAL, this.locX, this.locY + 0.5D, this.locZ, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+     }
+diff --git a/src/main/java/net/minecraft/server/EntityWither.java b/src/main/java/net/minecraft/server/EntityWither.java
+index ecf0f46011f1e27990672353257a0a58f352e241..a3f02c38995e67dc46aa07ec7276ba5d57e4758a 100644
+--- a/src/main/java/net/minecraft/server/EntityWither.java
++++ b/src/main/java/net/minecraft/server/EntityWither.java
+@@ -156,15 +156,15 @@ public class EntityWither extends EntityMonster implements IRangedEntity {
+             double d9 = this.u(j);
+             double d10 = this.v(j);
+ 
+-            this.world.addParticle(EnumParticle.SMOKE_NORMAL, d8 + this.random.nextGaussian() * 0.30000001192092896D, d9 + this.random.nextGaussian() * 0.30000001192092896D, d10 + this.random.nextGaussian() * 0.30000001192092896D, 0.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.SMOKE_NORMAL, d8 + this.random.nextGaussian() * 0.30000001192092896D, d9 + this.random.nextGaussian() * 0.30000001192092896D, d10 + this.random.nextGaussian() * 0.30000001192092896D, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             if (flag && this.world.random.nextInt(4) == 0) {
+-                this.world.addParticle(EnumParticle.SPELL_MOB, d8 + this.random.nextGaussian() * 0.30000001192092896D, d9 + this.random.nextGaussian() * 0.30000001192092896D, d10 + this.random.nextGaussian() * 0.30000001192092896D, 0.699999988079071D, 0.699999988079071D, 0.5D, new int[0]);
++                this.world.addParticle(EnumParticle.SPELL_MOB, d8 + this.random.nextGaussian() * 0.30000001192092896D, d9 + this.random.nextGaussian() * 0.30000001192092896D, d10 + this.random.nextGaussian() * 0.30000001192092896D, 0.699999988079071D, 0.699999988079071D, 0.5D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         }
+ 
+         if (this.cl() > 0) {
+             for (j = 0; j < 3; ++j) {
+-                this.world.addParticle(EnumParticle.SPELL_MOB, this.locX + this.random.nextGaussian() * 1.0D, this.locY + (double) (this.random.nextFloat() * 3.3F), this.locZ + this.random.nextGaussian() * 1.0D, 0.699999988079071D, 0.699999988079071D, 0.8999999761581421D, new int[0]);
++                this.world.addParticle(EnumParticle.SPELL_MOB, this.locX + this.random.nextGaussian() * 1.0D, this.locY + (double) (this.random.nextFloat() * 3.3F), this.locZ + this.random.nextGaussian() * 1.0D, 0.699999988079071D, 0.699999988079071D, 0.8999999761581421D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+         }
+ 
+diff --git a/src/main/java/net/minecraft/server/EntityWolf.java b/src/main/java/net/minecraft/server/EntityWolf.java
+index 931888ba9901d26736e463b952bb9037443c89c9..616ff5da3d5622d5da16f1cc6782e9d2bc37fc19 100644
+--- a/src/main/java/net/minecraft/server/EntityWolf.java
++++ b/src/main/java/net/minecraft/server/EntityWolf.java
+@@ -185,7 +185,7 @@ public class EntityWolf extends EntityTameableAnimal {
+                     float f1 = (this.random.nextFloat() * 2.0F - 1.0F) * this.width * 0.5F;
+                     float f2 = (this.random.nextFloat() * 2.0F - 1.0F) * this.width * 0.5F;
+ 
+-                    this.world.addParticle(EnumParticle.WATER_SPLASH, this.locX + (double) f1, (double) (f + 0.8F), this.locZ + (double) f2, this.motX, this.motY, this.motZ, new int[0]);
++                    this.world.addParticle(EnumParticle.WATER_SPLASH, this.locX + (double) f1, (double) (f + 0.8F), this.locZ + (double) f2, this.motX, this.motY, this.motZ, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+             }
+         }
+diff --git a/src/main/java/net/minecraft/server/Explosion.java b/src/main/java/net/minecraft/server/Explosion.java
+index e605298073e4911c746d06465d09d6cae0a63f6c..4392e96c5794e73e4ba853196a6adba0626d5ae0 100644
+--- a/src/main/java/net/minecraft/server/Explosion.java
++++ b/src/main/java/net/minecraft/server/Explosion.java
+@@ -188,9 +188,9 @@ public class Explosion {
+         this.world.makeSound(this.posX, this.posY, this.posZ, "random.explode", volume, (1.0F + (this.world.random.nextFloat() - this.world.random.nextFloat()) * 0.2F) * 0.7F);
+         // PaperSpigot end
+         if (this.size >= 2.0F && this.b) {
+-            this.world.addParticle(EnumParticle.EXPLOSION_HUGE, this.posX, this.posY, this.posZ, 1.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.EXPLOSION_HUGE, this.posX, this.posY, this.posZ, 1.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         } else {
+-            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, this.posX, this.posY, this.posZ, 1.0D, 0.0D, 0.0D, new int[0]);
++            this.world.addParticle(EnumParticle.EXPLOSION_LARGE, this.posX, this.posY, this.posZ, 1.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+         }
+ 
+         Iterator iterator;
+@@ -266,8 +266,8 @@ public class Explosion {
+                     d3 *= d7;
+                     d4 *= d7;
+                     d5 *= d7;
+-                    this.world.addParticle(EnumParticle.EXPLOSION_NORMAL, (d0 + this.posX * 1.0D) / 2.0D, (d1 + this.posY * 1.0D) / 2.0D, (d2 + this.posZ * 1.0D) / 2.0D, d3, d4, d5, new int[0]);
+-                    this.world.addParticle(EnumParticle.SMOKE_NORMAL, d0, d1, d2, d3, d4, d5, new int[0]);
++                    this.world.addParticle(EnumParticle.EXPLOSION_NORMAL, (d0 + this.posX * 1.0D) / 2.0D, (d1 + this.posY * 1.0D) / 2.0D, (d2 + this.posZ * 1.0D) / 2.0D, d3, d4, d5, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
++                    this.world.addParticle(EnumParticle.SMOKE_NORMAL, d0, d1, d2, d3, d4, d5, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 }
+ 
+                 if (block.getMaterial() != Material.AIR) {
+diff --git a/src/main/java/net/minecraft/server/ItemBucket.java b/src/main/java/net/minecraft/server/ItemBucket.java
+index b62ea42fc40f0e2000f7f408b3f4d9424b1be4c1..a85f5f170c1948fca50a2414d60d7459d2093178 100644
+--- a/src/main/java/net/minecraft/server/ItemBucket.java
++++ b/src/main/java/net/minecraft/server/ItemBucket.java
+@@ -149,7 +149,7 @@ public class ItemBucket extends Item {
+                     world.makeSound((double) ((float) i + 0.5F), (double) ((float) j + 0.5F), (double) ((float) k + 0.5F), "random.fizz", 0.5F, 2.6F + (world.random.nextFloat() - world.random.nextFloat()) * 0.8F);
+ 
+                     for (int l = 0; l < 8; ++l) {
+-                        world.addParticle(EnumParticle.SMOKE_LARGE, (double) i + Math.random(), (double) j + Math.random(), (double) k + Math.random(), 0.0D, 0.0D, 0.0D, new int[0]);
++                        world.addParticle(EnumParticle.SMOKE_LARGE, (double) i + Math.random(), (double) j + Math.random(), (double) k + Math.random(), 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                     }
+                 } else {
+                     if (!world.isClientSide && flag && !material.isLiquid()) {
+diff --git a/src/main/java/net/minecraft/server/MobSpawnerAbstract.java b/src/main/java/net/minecraft/server/MobSpawnerAbstract.java
+index c74bd1b944b6628d315a6f5b7b745ccc4133a6be..a0c6716ea4441fce903c99859c7f2043181c8144 100644
+--- a/src/main/java/net/minecraft/server/MobSpawnerAbstract.java
++++ b/src/main/java/net/minecraft/server/MobSpawnerAbstract.java
+@@ -70,8 +70,8 @@ public abstract class MobSpawnerAbstract {
+                 double d2 = (double) ((float) blockposition.getY() + this.a().random.nextFloat());
+ 
+                 d0 = (double) ((float) blockposition.getZ() + this.a().random.nextFloat());
+-                this.a().addParticle(EnumParticle.SMOKE_NORMAL, d1, d2, d0, 0.0D, 0.0D, 0.0D, new int[0]);
+-                this.a().addParticle(EnumParticle.FLAME, d1, d2, d0, 0.0D, 0.0D, 0.0D, new int[0]);
++                this.a().addParticle(EnumParticle.SMOKE_NORMAL, d1, d2, d0, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
++                this.a().addParticle(EnumParticle.FLAME, d1, d2, d0, 0.0D, 0.0D, 0.0D, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+                 if (this.spawnDelay > 0) {
+                     this.spawnDelay -= tickDelay; // PaperSpigot
+                 }
+diff --git a/src/main/java/net/minecraft/server/NBTTagCompound.java b/src/main/java/net/minecraft/server/NBTTagCompound.java
+index 1baf396f1c1bc369f778e1b3aa83e3eecaad4bd3..884495e439a1a35233798bdc52371adb6dacc2e6 100644
+--- a/src/main/java/net/minecraft/server/NBTTagCompound.java
++++ b/src/main/java/net/minecraft/server/NBTTagCompound.java
+@@ -199,7 +203,7 @@ public class NBTTagCompound extends NBTBase {
+ 
+     public int[] getIntArray(String s) {
+         try {
+-            return !this.hasKeyOfType(s, 11) ? new int[0] : ((NBTTagIntArray) this.map.get(s)).c();
++            return !this.hasKeyOfType(s, 11) ? com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY : ((NBTTagIntArray) this.map.get(s)).c();
+         } catch (ClassCastException classcastexception) {
+             throw new ReportedException(this.a(s, 11, classcastexception));
+         }
+diff --git a/src/main/java/net/minecraft/server/NBTTagList.java b/src/main/java/net/minecraft/server/NBTTagList.java
+index a0e6b0ff520dafc53a0b9f180153997b127bc3e0..cecfa4afab7383450b547ffaf65a4d899b2a22a0 100644
+--- a/src/main/java/net/minecraft/server/NBTTagList.java
++++ b/src/main/java/net/minecraft/server/NBTTagList.java
+@@ -131,9 +131,9 @@ public class NBTTagList extends NBTBase {
+         if (i >= 0 && i < this.list.size()) {
+             NBTBase nbtbase = (NBTBase) this.list.get(i);
+ 
+-            return nbtbase.getTypeId() == 11 ? ((NBTTagIntArray) nbtbase).c() : new int[0];
++            return nbtbase.getTypeId() == 11 ? ((NBTTagIntArray) nbtbase).c() : com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY;
+         } else {
+-            return new int[0];
++            return com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY;
+         }
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/PathfinderGoalBreed.java b/src/main/java/net/minecraft/server/PathfinderGoalBreed.java
+index cdff6d2adf2683e856157febff763e88ee3cb2d2..6a4b6f9448ae63d91aa74665ffb4f860ab13fe4f 100644
+--- a/src/main/java/net/minecraft/server/PathfinderGoalBreed.java
++++ b/src/main/java/net/minecraft/server/PathfinderGoalBreed.java
+@@ -105,7 +105,7 @@ public class PathfinderGoalBreed extends PathfinderGoal {
+                 double d4 = 0.5D + random.nextDouble() * (double) this.d.length;
+                 double d5 = random.nextDouble() * (double) this.d.width * 2.0D - (double) this.d.width;
+ 
+-                this.a.addParticle(EnumParticle.HEART, this.d.locX + d3, this.d.locY + d4, this.d.locZ + d5, d0, d1, d2, new int[0]);
++                this.a.addParticle(EnumParticle.HEART, this.d.locX + d3, this.d.locY + d4, this.d.locZ + d5, d0, d1, d2, com.hpfxd.pandaspigot.util.PandaSpigotConstants.EMPTY_INT_ARRAY);
+             }
+ 
+             if (this.a.getGameRules().getBoolean("doMobLoot")) {
+diff --git a/src/main/java/com/hpfxd/pandaspigot/util/PandaSpigotConstants.java b/src/main/java/com/hpfxd/pandaspigot/util/PandaSpigotConstants.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/com/hpfxd/pandaspigot/util/PandaSpigotConstants.java
+@@ -0,0 +1,10 @@
++package com.hpfxd.pandaspigot.util;
++
++// PandaSpigot start - NachoSpigot: shared immutable empty arrays
++public final class PandaSpigotConstants {
++
++    public static final int[] EMPTY_INT_ARRAY = new int[0];
++
++    private PandaSpigotConstants() {}
++}
++// PandaSpigot end
+diff --git a/src/test/java/net/minecraft/server/NBTTagCompoundTest.java b/src/test/java/net/minecraft/server/NBTTagCompoundTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/test/java/net/minecraft/server/NBTTagCompoundTest.java
+@@ -0,0 +1,38 @@
++package net.minecraft.server;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertNotSame;
++import static org.junit.Assert.assertSame;
++
++import org.junit.Test;
++
++public class NBTTagCompoundTest {
++
++    @Test
++    public void clonePreservesSmallAndLargeCompounds() {
++        for (int size : new int[] { 0, 1, 6, 7, 16, 32 }) {
++            NBTTagCompound compound = new NBTTagCompound();
++            for (int i = 0; i < size; ++i) {
++                compound.setInt("key" + i, i);
++            }
++
++            NBTTagCompound clone = (NBTTagCompound) compound.clone();
++            assertNotSame(compound, clone);
++            assertEquals(compound, clone);
++
++            if (size > 0) {
++                clone.setInt("key0", -1);
++                assertEquals(0, compound.getInt("key0"));
++            }
++        }
++    }
++
++    @Test
++    public void missingIntArraysReuseTheSharedEmptyArray() {
++        NBTTagCompound compound = new NBTTagCompound();
++        NBTTagList list = new NBTTagList();
++
++        assertSame(compound.getIntArray("missing"), new NBTTagCompound().getIntArray("other"));
++        assertSame(compound.getIntArray("missing"), list.c(0));
++    }
++}

@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 16:00:00 -0300
+Subject: [PATCH] Fix entity and command block memory leaks
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+index 74ca061f42d123c59dab2ea3bd3d6d25ae27d12e..a6c65b2f978e7505145359e459e58e63647dde26 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+@@ -1,6 +1,7 @@
+ package org.bukkit.craftbukkit.entity;
+ 
+ import com.google.common.base.Preconditions;
++import java.lang.ref.WeakReference; // PandaSpigot - KigPaper: avoid retaining damage events
+ import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.List;
+@@ -43,7 +44,7 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
+     
+     protected final CraftServer server;
+     protected Entity entity;
+-    private EntityDamageEvent lastDamageEvent;
++    private WeakReference<EntityDamageEvent> lastDamageEvent; // PandaSpigot - KigPaper: avoid retaining damage events
+ 
+     public CraftEntity(final CraftServer server, final Entity entity) {
+         this.server = server;
+@@ -355,11 +356,11 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
+     }
+ 
+     public void setLastDamageCause(EntityDamageEvent event) {
+-        lastDamageEvent = event;
++        lastDamageEvent = event == null ? null : new WeakReference<EntityDamageEvent>(event); // PandaSpigot - KigPaper: avoid retaining damage events
+     }
+ 
+     public EntityDamageEvent getLastDamageCause() {
+-        return lastDamageEvent;
++        return lastDamageEvent == null ? null : lastDamageEvent.get(); // PandaSpigot - KigPaper
+     }
+ 
+     public UUID getUniqueId() {
+diff --git a/src/main/java/org/bukkit/craftbukkit/command/ServerCommandSender.java b/src/main/java/org/bukkit/craftbukkit/command/ServerCommandSender.java
+index b339cf3ef05712c549f0810486de09641acf568a..f9bf87a97c234797cec71fa84b2897fd5d6064e9 100644
+--- a/src/main/java/org/bukkit/craftbukkit/command/ServerCommandSender.java
++++ b/src/main/java/org/bukkit/craftbukkit/command/ServerCommandSender.java
+@@ -12,18 +12,10 @@ import org.bukkit.plugin.Plugin;
+ import java.util.Set;
+ 
+ public abstract class ServerCommandSender implements CommandSender {
+-    private static PermissibleBase blockPermInst;
+     private final PermissibleBase perm;
+ 
+     public ServerCommandSender() {
+-        if (this instanceof CraftBlockCommandSender) {
+-            if (blockPermInst == null) {
+-                blockPermInst = new PermissibleBase(this);
+-            }
+-            this.perm = blockPermInst;
+-        } else {
+-            this.perm = new PermissibleBase(this);
+-        }
++        this.perm = new PermissibleBase(this); // PandaSpigot - KigPaper: don't retain the first command block sender statically
+     }
+ 
+     public boolean isPermissionSet(String name) {
