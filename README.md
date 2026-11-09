@@ -172,4 +172,49 @@ La autoría original se conserva en las cabeceras de los archivos de `patches/`.
 | `0169-Avoid-EnumDirection-array-allocations` | NachoSpigot-0004/0005, por Heath Logan Campbell. |
 | `0170-Reuse-empty-int-arrays` | NachoSpigot, por Heath Logan Campbell. |
 
-Los parches con prefijo `MASpigot`, el ticking paralelo de mundos, los cambios multibloque pre-codificados y la reducción de memoria por chunk (`0160`–`0162`) son desarrollos propios de **MineAqua**. Los demás parches pertenecen a PandaSpigot, Paper, Spigot o sus respectivos autores, identificados en cada archivo de parche.
+### Parches de MineAqua aplicados sobre PandaSpigot
+
+El upstream PandaSpigot (`hpfxd/PandaSpigot`) termina en `0138` tanto en servidor como en API. Todos los parches aplicados a continuación sobre esa base son puertos y desarrollos propios de **MineAqua** (adaptados desde MASpigot, o escritos directamente para esta rama):
+
+**Servidor** (`patches/server/`, `0139`–`0162`):
+
+| Parche | Descripción |
+| --- | --- |
+| `0139` | MASpigot: corrección del estado de bloqueo con espada. |
+| `0140` | MASpigot: rango de tracking para jugadores invisibles. |
+| `0141` | MASpigot: multiplicador de daño de armadura configurable. |
+| `0142` | MASpigot: exposición de los campos del paquete de multibloque. |
+| `0143` | MASpigot: opción de tile entities en snapshots de chunk. |
+| `0144` | MASpigot: toggles de física por mundo. |
+| `0145` | MASpigot: toggles de ticks de servidor. |
+| `0146` | MASpigot: toggles de experiencia de jugador. |
+| `0147` | MASpigot: opción de tracking de jugadores más rápido. |
+| `0148` | MASpigot: toggle del evento PlayerMoveEvent. |
+| `0149` | MASpigot: opción para reducir el spam de sonidos de paso. |
+| `0150` | MASpigot: opciones de física de pociones lanzadas. |
+| `0151` | MASpigot: comando de prueba de snapshots de chunk. |
+| `0152` | MASpigot: restauración del sistema de perfiles de knockback. |
+| `0153` | MASpigot: knockback configurable de la caña de pescar. |
+| `0154` | MASpigot: publicación de PandaSpigot-Server a Reposilite de MineAqua. |
+| `0155` | MASpigot: compatibilidad con `com.destroystokyo.paper.Title`. |
+| `0156` | MASpigot: eventos de efectos de poción. |
+| `0157` | MASpigot: exposición de la clase `EntityTypes` al mapeo `EntityType`. |
+| `0158` | MASpigot: implementación de `hideEntity`/`showEntity`. |
+| `0159` | MASpigot: restauración de la extensión `MovementHandler`. |
+| `0160` | Ticking paralelo de mundos opt-in (`parallelWorldTicking`). |
+| `0161` | Compartición de cambios de multibloque pre-codificados. |
+| `0162` | Reducción de memoria por chunk y misceláneos de Java 21. |
+
+**API** (`patches/api/`, `0034`–`0040`):
+
+| Parche | Descripción |
+| --- | --- |
+| `0034` | MASpigot: opción de tile entities para snapshots de chunk (API). |
+| `0035` | MASpigot: publicación a Reposilite de MineAqua. |
+| `0036` | MASpigot: API del sistema de perfiles de knockback. |
+| `0037` | MASpigot: compatibilidad con `com.destroystokyo.paper.Title`. |
+| `0038` | MASpigot: eventos de efectos de poción. |
+| `0039` | MASpigot: API `hideEntity`/`showEntity`. |
+| `0040` | MASpigot: extensión `MovementHandler`. |
+
+Además de estos, los parches `0163`–`0170` de servidor (listados en la tabla de procedencia superior) fueron escritos por **MineAqua** como adaptaciones de optimizaciones de terceros. Los demás parches pertenecen a PandaSpigot, Paper, Spigot o sus respectivos autores, identificados en cada archivo de parche.
