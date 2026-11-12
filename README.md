@@ -25,6 +25,20 @@ This runs world and entity events from worker threads. Enable it only when every
 
 See a full list of patches [here](./patches/).
 
+## Modern armor swapping
+
+Clients running Java 1.19.4 or newer can right-click an armor piece in their
+selected hotbar slot to swap it with the equipped piece. PandaSpigot captures the
+original handshake before local protocol translation, without calling plugin APIs.
+The translator (such as ViaVersion) must run on this backend: translation on a
+proxy hides the original protocol. Protocol translation is still required for
+modern clients to connect to a 1.8.8 server.
+
+Clients on 1.8–1.19.3 retain the original behavior. Known release protocols from
+1.19.4 through 26.3 are supported; unknown protocols and snapshots leave swapping
+disabled. Extend the known protocol range when adding newer client releases.
+Item-use cancellation through `PlayerInteractEvent` is respected.
+
 ## Using
 You can download the latest pre-built server JAR by clicking the download button below.  
 [![Download](https://custom-icon-badges.demolab.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white)](https://downloads.hpfxd.com/v2/projects/pandaspigot/versions/1.8.8/builds/latest/downloads/paperclip)

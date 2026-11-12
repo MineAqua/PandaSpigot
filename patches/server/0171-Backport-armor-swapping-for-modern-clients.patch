@@ -1,0 +1,453 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: J4im3x0 <36940599+J4im3x0@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 00:21:53 -0300
+Subject: [PATCH] Backport armor swapping for modern clients
+
+Capture the first framed handshake before local protocol translators rewrite it, then remove the observer. Keep legacy and unknown clients unchanged without consulting plugin APIs. Preserve armor NBT and creative durability and honor item-use cancellation.
+
+diff --git a/src/main/java/com/hpfxd/pandaspigot/network/ClientProtocolDetector.java b/src/main/java/com/hpfxd/pandaspigot/network/ClientProtocolDetector.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef77ea686e2d5dfff306bd3fb9702765fa848303
+--- /dev/null
++++ b/src/main/java/com/hpfxd/pandaspigot/network/ClientProtocolDetector.java
+@@ -0,0 +1,38 @@
++package com.hpfxd.pandaspigot.network;
++
++import io.netty.buffer.ByteBuf;
++import io.netty.channel.ChannelHandlerContext;
++import io.netty.channel.ChannelInboundHandlerAdapter;
++import net.minecraft.server.NetworkManager;
++import net.minecraft.server.PacketDataSerializer;
++
++/** Observes the first framed packet before protocol translators rewrite it. */
++public final class ClientProtocolDetector extends ChannelInboundHandlerAdapter {
++    private final NetworkManager connection;
++
++    public ClientProtocolDetector(NetworkManager connection) {
++        this.connection = connection;
++    }
++
++    @Override
++    public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
++        try {
++            if (message instanceof ByteBuf) {
++                PacketDataSerializer input = new PacketDataSerializer(((ByteBuf) message).duplicate());
++                if (input.e() == 0) {
++                    int protocol = input.e();
++                    input.c(Short.MAX_VALUE);
++                    input.readUnsignedShort();
++                    int intent = input.e();
++                    if (!input.isReadable() && intent >= 1 && intent <= 3) {
++                        connection.clientProtocolVersion = protocol;
++                    }
++                }
++            }
++        } catch (RuntimeException ignored) {
++            // The normal decoder remains responsible for rejecting malformed packets.
++        }
++        context.pipeline().remove(this);
++        context.fireChannelRead(message);
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/ItemArmor.java b/src/main/java/net/minecraft/server/ItemArmor.java
+index cd77ba5fb88dcc891d19c07bfa15e5a0c97c7373..6ca63561a31d96fb9b87add46ddde8cdd696af7b 100644
+--- a/src/main/java/net/minecraft/server/ItemArmor.java
++++ b/src/main/java/net/minecraft/server/ItemArmor.java
+@@ -160,6 +160,13 @@ public class ItemArmor extends Item {
+         if (itemstack1 == null) {
+             entityhuman.setEquipment(i, itemstack.cloneItemStack());
+             itemstack.count = 0;
++        // PandaSpigot start - modern clients can swap occupied armor slots
++        } else if (itemstack.count == 1 && itemstack1.count == 1 && !ItemStack.matches(itemstack, itemstack1)
++                && entityhuman instanceof EntityPlayer && !entityhuman.isSpectator()
++                && ((EntityPlayer) entityhuman).playerConnection.networkManager.supportsModernArmorSwap()) {
++            entityhuman.setEquipment(i, itemstack.cloneItemStack());
++            return itemstack1.cloneItemStack();
++        // PandaSpigot end
+         }
+ 
+         return itemstack;
+diff --git a/src/main/java/net/minecraft/server/NetworkManager.java b/src/main/java/net/minecraft/server/NetworkManager.java
+index 9ff04c5016f1b8f339975559b8cf619f1841da82..8dc4538cc3cf3da32353f96556d846b9d2034c6b 100644
+--- a/src/main/java/net/minecraft/server/NetworkManager.java
++++ b/src/main/java/net/minecraft/server/NetworkManager.java
+@@ -76,6 +76,14 @@ public class NetworkManager extends SimpleChannelInboundHandler<Packet> {
+     private boolean p;
+     // PandaSpigot start - Backport NetworkClient
+     public int protocolVersion;
++    // PandaSpigot start - preserve the handshake protocol before translation
++    public volatile int clientProtocolVersion = -1;
++
++    public boolean supportsModernArmorSwap() {
++        // shortcut: known release protocols 1.19.4 through 26.3, extend when supporting newer releases
++        return this.clientProtocolVersion >= 762 && this.clientProtocolVersion <= 777;
++    }
++    // PandaSpigot end
+     public java.net.InetSocketAddress virtualHost;
+     // PandaSpigot end
+     private static final boolean enableExplicitFlush = Boolean.getBoolean("paper.explicit-flush"); // PandaSpigot
+diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
+index 538bb537eab31e201cd96d2908e7bcefa8ff71cb..25491afa0c11da497a0a8082e95edbcdf0a183c0 100644
+--- a/src/main/java/net/minecraft/server/PlayerConnection.java
++++ b/src/main/java/net/minecraft/server/PlayerConnection.java
+@@ -784,6 +784,11 @@ public class PlayerConnection implements PacketListenerPlayIn, IUpdatePlayerList
+ 
+             if (!cancelled) {
+                 this.player.playerInteractManager.useItem(this.player, this.player.world, itemstack);
++            // PandaSpigot start - undo modern client armor predictions when item use is denied
++            } else if (itemstack.getItem() instanceof ItemArmor
++                    && this.networkManager.supportsModernArmorSwap()) {
++                this.player.updateInventory(this.player.defaultContainer);
++            // PandaSpigot end
+             }
+             }
+             // Spigot end
+diff --git a/src/main/java/net/minecraft/server/PlayerInteractManager.java b/src/main/java/net/minecraft/server/PlayerInteractManager.java
+index 4a6b183900ff2b17084e45ac54b8b079ab8628cb..94558886de420bc365208360e67e35519c82e638 100644
+--- a/src/main/java/net/minecraft/server/PlayerInteractManager.java
++++ b/src/main/java/net/minecraft/server/PlayerInteractManager.java
+@@ -382,7 +382,8 @@ public class PlayerInteractManager {
+                 return false;
+             } else {
+                 entityhuman.inventory.items[entityhuman.inventory.itemInHandIndex] = itemstack1;
+-                if (this.isCreative()) {
++                // PandaSpigot - an armor swap returns the old piece, whose damage must be preserved
++                if (this.isCreative() && !(itemstack.getItem() instanceof ItemArmor && itemstack1 != itemstack)) {
+                     itemstack1.count = i;
+                     if (itemstack1.e()) {
+                         itemstack1.setData(j);
+diff --git a/src/main/java/net/minecraft/server/ServerConnection.java b/src/main/java/net/minecraft/server/ServerConnection.java
+index 882bf62cc8a08e51b5d315c608194a68ae025489..e0a0f05774bdc1578a93d32f3a5763d7ecdc41fb 100644
+--- a/src/main/java/net/minecraft/server/ServerConnection.java
++++ b/src/main/java/net/minecraft/server/ServerConnection.java
+@@ -124,6 +124,7 @@ public class ServerConnection {
+                         .addLast("encoder", new PacketEncoder(EnumProtocolDirection.CLIENTBOUND));
+                     // PandaSpigot end
+                     NetworkManager networkmanager = new NetworkManager(EnumProtocolDirection.SERVERBOUND);
++                    channel.pipeline().addAfter("splitter", "client_protocol", new com.hpfxd.pandaspigot.network.ClientProtocolDetector(networkmanager)); // PandaSpigot
+ 
+                     // PandaSpigot start
+                     // ServerConnection.this.h.add(networkmanager);
+diff --git a/src/test/java/com/hpfxd/pandaspigot/network/ClientProtocolDetectorTest.java b/src/test/java/com/hpfxd/pandaspigot/network/ClientProtocolDetectorTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c635dd66acfe10df32b274576bede793c969bbf7
+--- /dev/null
++++ b/src/test/java/com/hpfxd/pandaspigot/network/ClientProtocolDetectorTest.java
+@@ -0,0 +1,142 @@
++package com.hpfxd.pandaspigot.network;
++
++import io.netty.buffer.ByteBuf;
++import io.netty.buffer.Unpooled;
++import io.netty.channel.ChannelHandlerContext;
++import io.netty.channel.ChannelInboundHandlerAdapter;
++import io.netty.channel.embedded.EmbeddedChannel;
++import java.lang.reflect.Field;
++import net.minecraft.server.NetworkManager;
++import net.minecraft.server.PacketDataSerializer;
++import net.minecraft.server.PacketSplitter;
++import org.bukkit.support.AbstractTestingBase;
++import org.junit.Test;
++import sun.misc.Unsafe;
++import static org.junit.Assert.*;
++
++public class ClientProtocolDetectorTest extends AbstractTestingBase {
++    private NetworkManager connection() throws Exception {
++        // The constructor needs the running server's packet limiter configuration.
++        Field field = Unsafe.class.getDeclaredField("theUnsafe");
++        field.setAccessible(true);
++        NetworkManager network = (NetworkManager) ((Unsafe) field.get(null)).allocateInstance(NetworkManager.class);
++        network.clientProtocolVersion = -1;
++        return network;
++    }
++
++    private ByteBuf handshake(int protocol, int intent) throws Exception {
++        PacketDataSerializer output = new PacketDataSerializer(Unpooled.buffer());
++        output.b(0);
++        output.b(protocol);
++        output.a("localhost");
++        output.writeShort(25565);
++        output.b(intent);
++        return output;
++    }
++
++    private ByteBuf frame(ByteBuf payload) {
++        ByteBuf output = Unpooled.buffer();
++        VarIntUtil.writeVarInt(output, payload.readableBytes());
++        output.writeBytes(payload);
++        payload.release();
++        return output;
++    }
++
++    @Test
++    public void observesOriginalProtocolBeforeTranslatorInsertedAheadOfDecoder() throws Exception {
++        NetworkManager network = connection();
++        EmbeddedChannel channel = new EmbeddedChannel();
++        channel.pipeline().addLast("splitter", new PacketSplitter());
++        channel.pipeline().addLast("client_protocol", new ClientProtocolDetector(network));
++        channel.pipeline().addLast("decoder", new ChannelInboundHandlerAdapter());
++        // ViaVersion inserts its inbound translator before the Minecraft decoder.
++        channel.pipeline().addBefore("decoder", "translator", new ChannelInboundHandlerAdapter() {
++            @Override
++            public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
++                ((ByteBuf) message).release();
++                context.fireChannelRead(handshake(47, 2));
++            }
++        });
++        try {
++            assertTrue(channel.writeInbound(frame(handshake(762, 2))));
++            assertEquals(762, network.clientProtocolVersion);
++            assertTrue(network.supportsModernArmorSwap());
++            PacketDataSerializer translated = new PacketDataSerializer(channel.readInbound());
++            try {
++                assertEquals(0, translated.e());
++                assertEquals(47, translated.e());
++            } finally {
++                translated.release();
++            }
++            assertNull(channel.pipeline().get(ClientProtocolDetector.class));
++        } finally {
++            channel.finishAndReleaseAll();
++        }
++    }
++
++    @Test
++    public void fragmentedAndCoalescedFramesAreForwardedUnchangedAndOnlyFirstIsObserved() throws Exception {
++        NetworkManager network = connection();
++        EmbeddedChannel channel = new EmbeddedChannel(new PacketSplitter(), new ClientProtocolDetector(network));
++        ByteBuf first = handshake(47, 2);
++        ByteBuf expected = first.copy();
++        ByteBuf input = frame(first);
++        ByteBuf second = frame(handshake(762, 2));
++        input.writeBytes(second);
++        second.release();
++        try {
++            assertFalse(channel.writeInbound(input.readRetainedSlice(1)));
++            assertEquals(-1, network.clientProtocolVersion);
++            assertTrue(channel.writeInbound(input));
++            ByteBuf received = channel.readInbound();
++            try {
++                assertEquals(expected, received);
++                assertEquals(0, received.readerIndex());
++            } finally {
++                received.release();
++            }
++            ((ByteBuf) channel.readInbound()).release();
++            assertEquals(47, network.clientProtocolVersion);
++            assertFalse(network.supportsModernArmorSwap());
++        } finally {
++            expected.release();
++            channel.finishAndReleaseAll();
++        }
++    }
++
++    @Test
++    public void malformedHandshakesRemainUnknownAndAreLeftForNormalDecoder() throws Exception {
++        for (ByteBuf malformed : new ByteBuf[] { Unpooled.buffer(0),
++                Unpooled.wrappedBuffer(new byte[] { 0, (byte) 128 }),
++                Unpooled.wrappedBuffer(new byte[] { 1 }), handshake(762, 0), handshake(762, 4) }) {
++            NetworkManager network = connection();
++            EmbeddedChannel channel = new EmbeddedChannel(new ClientProtocolDetector(network));
++            try {
++                assertTrue(channel.writeInbound(malformed));
++                assertEquals(malformed, channel.readInbound());
++                assertEquals(0, malformed.readerIndex());
++                assertEquals(-1, network.clientProtocolVersion);
++                assertNull(channel.pipeline().get(ClientProtocolDetector.class));
++            } finally {
++                malformed.release();
++                channel.finishAndReleaseAll();
++            }
++        }
++    }
++
++    @Test
++    public void onlyKnownModernReleaseProtocolsEnableArmorSwapping() throws Exception {
++        for (int protocol : new int[] { -1, 47, 107, 761, 762, 767, 774, 775, 776, 777, 778, 1 << 30 }) {
++            NetworkManager network = connection();
++            EmbeddedChannel channel = new EmbeddedChannel(new ClientProtocolDetector(network));
++            try {
++                assertTrue(channel.writeInbound(handshake(protocol, 3)));
++                ((ByteBuf) channel.readInbound()).release();
++                assertEquals(protocol, network.clientProtocolVersion);
++                assertEquals(protocol >= 762 && protocol <= 777, network.supportsModernArmorSwap());
++            } finally {
++                channel.finishAndReleaseAll();
++            }
++        }
++    }
++}
+diff --git a/src/test/java/net/minecraft/server/ModernArmorSwapTest.java b/src/test/java/net/minecraft/server/ModernArmorSwapTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..136ea05da06d77a1e432efc03cb50360ee38f20e
+--- /dev/null
++++ b/src/test/java/net/minecraft/server/ModernArmorSwapTest.java
+@@ -0,0 +1,169 @@
++package net.minecraft.server;
++
++import java.lang.reflect.Field;
++import java.util.UUID;
++import org.bukkit.support.AbstractTestingBase;
++import org.junit.Test;
++import sun.misc.Unsafe;
++import static org.junit.Assert.*;
++
++public class ModernArmorSwapTest extends AbstractTestingBase {
++    private static final Item[] ARMOR = { Items.DIAMOND_BOOTS, Items.DIAMOND_LEGGINGS,
++            Items.DIAMOND_CHESTPLATE, Items.DIAMOND_HELMET };
++
++    // Allocate only the inventory fixture; starting a real world requires a running server.
++    private TestPlayer player(WorldSettings.EnumGamemode mode) throws Exception {
++        Field field = Unsafe.class.getDeclaredField("theUnsafe");
++        field.setAccessible(true);
++        TestPlayer player = (TestPlayer) ((Unsafe) field.get(null)).allocateInstance(TestPlayer.class);
++        player.uniqueID = UUID.randomUUID();
++        player.inventory = new PlayerInventory(player);
++        Field manager = EntityPlayer.class.getDeclaredField("playerInteractManager");
++        manager.setAccessible(true);
++        manager.set(player, new PlayerInteractManager(null));
++        player.playerConnection = (PlayerConnection) ((Unsafe) field.get(null)).allocateInstance(PlayerConnection.class);
++        Field connection = PlayerConnection.class.getDeclaredField("networkManager");
++        connection.setAccessible(true);
++        NetworkManager network = (NetworkManager) ((Unsafe) field.get(null)).allocateInstance(NetworkManager.class);
++        network.clientProtocolVersion = 762;
++        connection.set(player.playerConnection, network);
++        Field gamemode = PlayerInteractManager.class.getDeclaredField("gamemode");
++        gamemode.setAccessible(true);
++        gamemode.set(player.playerInteractManager, mode);
++        return player;
++    }
++
++    private ItemStack piece(Item item, int damage, String name) {
++        ItemStack stack = new ItemStack(item, 1, damage);
++        NBTTagCompound tag = new NBTTagCompound();
++        tag.setString("test-name", name);
++        stack.setTag(tag);
++        stack.addEnchantment(Enchantment.PROTECTION_ENVIRONMENTAL, 2);
++        return stack;
++    }
++
++    @Test
++    public void swapsEverySlotWithoutChangingDataInSurvivalAndCreative() throws Exception {
++        for (WorldSettings.EnumGamemode mode : new WorldSettings.EnumGamemode[] {
++                WorldSettings.EnumGamemode.SURVIVAL, WorldSettings.EnumGamemode.CREATIVE }) {
++            for (int slot = 0; slot < ARMOR.length; slot++) {
++                TestPlayer player = player(mode);
++                ItemStack held = piece(ARMOR[slot], 12, "new");
++                ItemStack equipped = piece(ARMOR[slot], 31, "old");
++                ItemStack heldCopy = held.cloneItemStack();
++                ItemStack equippedCopy = equipped.cloneItemStack();
++                java.util.Arrays.fill(player.inventory.items, new ItemStack(Blocks.STONE));
++                player.inventory.itemInHandIndex = 4;
++                player.inventory.items[4] = held;
++                player.inventory.armor[slot] = equipped;
++
++                assertTrue(player.playerInteractManager.useItem(player, null, held));
++                assertTrue(ItemStack.matches(heldCopy, player.inventory.armor[slot]));
++                assertTrue(ItemStack.matches(equippedCopy, player.inventory.items[4]));
++                assertNotSame(held, player.inventory.armor[slot]);
++                assertNotSame(held.getTag(), player.inventory.armor[slot].getTag());
++                assertNotSame(equipped, player.inventory.items[4]);
++                assertNotSame(equipped.getTag(), player.inventory.items[4].getTag());
++                assertEquals(1, player.updates);
++
++                assertTrue(player.playerInteractManager.useItem(player, null, player.inventory.items[4]));
++                assertTrue(ItemStack.matches(heldCopy, player.inventory.items[4]));
++                assertTrue(ItemStack.matches(equippedCopy, player.inventory.armor[slot]));
++                for (int other = 0; other < ARMOR.length; other++) {
++                    if (other != slot) assertNull(player.inventory.armor[other]);
++                }
++            }
++        }
++    }
++
++    @Test
++    public void olderAndUnknownClientsDoNotSwap() throws Exception {
++        for (int version : new int[] { 47, 761, -1, 778, 1 << 30 }) {
++            TestPlayer player = player(WorldSettings.EnumGamemode.SURVIVAL);
++            player.playerConnection.networkManager.clientProtocolVersion = version;
++            ItemStack held = piece(ARMOR[0], 12, "new");
++            ItemStack equipped = piece(ARMOR[0], 31, "old");
++            player.inventory.items[0] = held;
++            player.inventory.armor[0] = equipped;
++            assertFalse(player.playerInteractManager.useItem(player, null, held));
++            assertSame(held, player.inventory.items[0]);
++            assertSame(equipped, player.inventory.armor[0]);
++            assertEquals(0, player.updates);
++        }
++    }
++
++    @Test
++    public void rejectsIdenticalPiecesAndInvalidCounts() throws Exception {
++        TestPlayer player = player(WorldSettings.EnumGamemode.SURVIVAL);
++        ItemStack held = piece(ARMOR[0], 12, "new");
++        player.inventory.items[0] = held;
++        player.inventory.armor[0] = held.cloneItemStack();
++        assertFalse(player.playerInteractManager.useItem(player, null, held));
++        player.inventory.armor[0].setData(31);
++        for (int count : new int[] { 0, 2, 64 }) {
++            held.count = count;
++            assertSame(held, held.a((World) null, player));
++            held.count = 1;
++            player.inventory.armor[0].count = count;
++            assertSame(held, held.a((World) null, player));
++            player.inventory.armor[0].count = 1;
++        }
++    }
++
++    @Test
++    public void spectatorsCannotEquipOrSwap() throws Exception {
++        TestPlayer player = player(WorldSettings.EnumGamemode.SPECTATOR);
++        ItemStack held = piece(ARMOR[0], 12, "new");
++        player.inventory.items[0] = held;
++        assertFalse(player.playerInteractManager.useItem(player, null, held));
++        assertNull(player.inventory.armor[0]);
++        player.inventory.armor[0] = piece(ARMOR[0], 31, "old");
++        assertFalse(player.playerInteractManager.useItem(player, null, held));
++        assertSame(held, held.a((World) null, player));
++    }
++
++    @Test
++    public void emptySlotRetainsLegacyBehavior() throws Exception {
++        for (WorldSettings.EnumGamemode mode : new WorldSettings.EnumGamemode[] {
++                WorldSettings.EnumGamemode.SURVIVAL, WorldSettings.EnumGamemode.CREATIVE }) {
++            for (int slot = 0; slot < ARMOR.length; slot++) {
++                TestPlayer player = player(mode);
++                ItemStack held = piece(ARMOR[slot], 12, "new");
++                player.inventory.items[0] = held;
++                assertTrue(player.playerInteractManager.useItem(player, null, held));
++                assertEquals(1, player.inventory.armor[slot].count);
++                if (mode == WorldSettings.EnumGamemode.CREATIVE) {
++                    assertSame(held, player.inventory.items[0]);
++                    assertEquals(1, held.count);
++                } else {
++                    assertNull(player.inventory.items[0]);
++                }
++            }
++        }
++    }
++
++    @Test
++    public void occupiedSlotWithUnknownProtocolDoesNotSwap() throws Exception {
++        TestPlayer player = player(WorldSettings.EnumGamemode.SURVIVAL);
++        player.playerConnection.networkManager.clientProtocolVersion = -1;
++        ItemStack held = piece(ARMOR[0], 12, "new");
++        ItemStack equipped = piece(ARMOR[0], 31, "old");
++        player.inventory.items[0] = held;
++        player.inventory.armor[0] = equipped;
++        assertFalse(player.playerInteractManager.useItem(player, null, held));
++        assertSame(equipped, player.inventory.armor[0]);
++    }
++
++    public static class TestPlayer extends EntityPlayer {
++        int updates;
++
++        private TestPlayer() {
++            super(null, null, null, null);
++        }
++
++        @Override
++        public void updateInventory(Container container) {
++            updates++;
++        }
++    }
++}
